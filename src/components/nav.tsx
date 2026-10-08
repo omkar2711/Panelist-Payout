@@ -1,20 +1,59 @@
-import { Wallet2 } from "lucide-react";
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Avatar } from "./avatar";
+import { BrandLogo, BrandSymbol } from "./brand-logo";
 import { SignOutButton } from "./sign-out-button";
 
-export function Nav({ title, userLabel }: { title: string; userLabel: string }) {
+export function Nav({
+  title,
+  userLabel,
+  links,
+}: {
+  title: string;
+  userLabel: string;
+  links: { href: string; label: string }[];
+}) {
+  const pathname = usePathname();
+
   return (
-    <header className="border-b border-slate-200 bg-white">
-      <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
-            <Wallet2 className="h-4.5 w-4.5" strokeWidth={2.25} />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-900">{title}</p>
-            <p className="text-xs text-slate-400">{userLabel}</p>
-          </div>
+    <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-white/85 backdrop-blur">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-3 sm:gap-4 sm:px-6 lg:px-8">
+        <div className="flex items-center gap-3" title={title}>
+          <BrandSymbol className="h-9 w-9 sm:hidden" />
+          <BrandLogo className="hidden h-9 sm:block" />
+          <span className="hidden border-l border-slate-200 pl-3 text-xs font-medium text-slate-400 lg:block">
+            Panelist portal
+          </span>
         </div>
-        <SignOutButton />
+
+        <nav className="flex gap-1 rounded-full bg-slate-100 p-1">
+          {links.map((link) => {
+            const isActive = pathname === link.href;
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors sm:px-4 ${
+                  isActive
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-900"
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="flex items-center gap-1.5 sm:gap-2.5">
+          <Avatar name={userLabel} />
+          <span className="hidden text-sm font-medium text-slate-700 md:block">
+            {userLabel}
+          </span>
+          <SignOutButton />
+        </div>
       </div>
     </header>
   );

@@ -1,4 +1,4 @@
-# Panelist Payout Manager
+# ExpertBench — Panelist Payout Manager
 
 Tracks interviews conducted by external panelists and what's owed to each of
 them, with separate logins for the vendor (admin) and each panelist.

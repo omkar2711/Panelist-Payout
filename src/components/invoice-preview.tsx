@@ -5,6 +5,7 @@ import {
   lineAmount,
   type InvoiceData,
 } from "@/lib/invoice";
+import { INVOICE_LOGO, showsBrandLogo } from "@/lib/brand";
 
 const sectionLabel = "text-[11px] font-semibold text-slate-500";
 
@@ -36,7 +37,10 @@ export function InvoicePreview({ data }: { data: InvoiceData }) {
             Invoice No # {data.invoiceNo || "—"}
           </p>
         </div>
-        {data.brand.trim() ? (
+        {showsBrandLogo(data.brand) ? (
+          // eslint-disable-next-line @next/next/no-img-element -- must match the PDF exactly
+          <img src={INVOICE_LOGO.src} alt={data.brand} className="h-12 w-auto" />
+        ) : data.brand.trim() ? (
           <p className="text-right text-3xl font-extrabold uppercase tracking-wide">
             {data.brand}
           </p>

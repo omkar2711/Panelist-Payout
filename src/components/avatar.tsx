@@ -16,6 +16,7 @@ export function Avatar({ name }: { name: string }) {
   const colors = PALETTE[hashName(name) % PALETTE.length];
   const initials = name
     .split(" ")
+    .map((part) => part.replace(/[^\p{L}\p{N}]/gu, ""))
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0])

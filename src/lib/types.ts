@@ -1,3 +1,5 @@
+import type { OutcomeId } from "@/lib/interview-rates";
+
 export type UserRole = "vendor" | "panelist";
 export type EntryStatus = "submitted" | "approved" | "rejected" | "paid";
 
@@ -12,7 +14,8 @@ export interface Profile {
 export interface Panelist {
   id: string;
   phone: string | null;
-  default_rate: number;
+  rate_60: number;
+  rate_90: number;
   active: boolean;
   created_at: string;
 }
@@ -24,6 +27,7 @@ export interface InterviewEntry {
   start_time: string | null;
   duration_minutes: number | null;
   interview_type: string | null;
+  outcome: OutcomeId;
   candidate_ref: string | null;
   notes: string | null;
   status: EntryStatus;
@@ -44,6 +48,15 @@ export interface Payment {
   notes: string | null;
   created_by: string | null;
   created_at: string;
+}
+
+export interface LeaderboardRow {
+  panelist_id: string;
+  full_name: string;
+  approved_count: number;
+  month_count: number;
+  last_month_count: number;
+  recent_count: number;
 }
 
 export interface PanelistBalance {

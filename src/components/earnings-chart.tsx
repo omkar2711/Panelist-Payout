@@ -13,8 +13,16 @@ import { formatCurrency } from "@/lib/format";
 
 export function EarningsChart({
   data,
+  seriesName = "Amount",
+  xInterval = 0,
+  formatValue = formatCurrency,
+  wholeNumbers = false,
 }: {
-  data: { label: string; amount: number }[];
+  data: { label: string; amount: number; tooltip?: string }[];
+  seriesName?: string;
+  xInterval?: number | "preserveStartEnd";
+  formatValue?: (value: number) => string;
+  wholeNumbers?: boolean;
 }) {
   return (
     <div className="h-64 w-full">
@@ -23,6 +31,7 @@ export function EarningsChart({
           <CartesianGrid strokeDasharray="3 3" stroke="#e1e0d9" vertical={false} />
           <XAxis
             dataKey="label"
+            interval={xInterval}
             tick={{ fontSize: 12, fill: "#898781" }}
             axisLine={{ stroke: "#e1e0d9" }}
             tickLine={false}
@@ -31,7 +40,8 @@ export function EarningsChart({
             tick={{ fontSize: 12, fill: "#898781" }}
             axisLine={false}
             tickLine={false}
-            width={70}
+            allowDecimals={!wholeNumbers}
+            width={wholeNumbers ? 40 : 70}
           />
           <Tooltip
             cursor={{ fill: "#f8fafc" }}
@@ -41,7 +51,8 @@ export function EarningsChart({
               boxShadow: "0 4px 12px rgba(11,11,11,0.08)",
               fontSize: 13,
             }}
-            formatter={(value) => formatCurrency(Number(value))}
+            formatter={(value) => [formatValue(Number(value)), seriesName]}
+            labelFormatter={(label, payload) => payload?.[0]?.payload?.tooltip ?? label}
           />
           <Bar dataKey="amount" fill="#2a78d6" radius={[4, 4, 0, 0]} maxBarSize={48} />
         </BarChart>

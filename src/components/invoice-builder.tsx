@@ -1,23 +1,31 @@
 "use client";
 
 import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
-import { FilePlus2, Plus, Printer, Trash2 } from "lucide-react";
+import { Download, FilePlus2, ListChecks, Plus, Trash2 } from "lucide-react";
 import { InvoicePreview } from "@/components/invoice-preview";
+import { ORG_NAME } from "@/lib/brand";
+import { INTERVIEW_DURATIONS, isOfferedDuration, outcomeOf } from "@/lib/interview-rates";
+import { createClient } from "@/lib/supabase/client";
 import {
+  claimLineItems,
   createDefaultInvoice,
+  currentMonthRange,
   defaultDates,
+  lineAmount,
   newLineItem,
   nextInvoiceNo,
+  presetLineItems,
   type InvoiceData,
   type LineItem,
 } from "@/lib/invoice";
 
 const STORAGE_KEY = "panelist-payout:invoice-draft";
+const BRAND_APPLIED_KEY = "panelist-payout:invoice-brand-applied";
 const MAX_SIGNATURE_BYTES = 500 * 1024;
 
 const inputClass =
   "w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20";
-const cardClass = "rounded-xl border border-slate-200 bg-white p-6";
+const cardClass = "rounded-2xl border border-slate-200/80 bg-white shadow-sm p-6";
 const cardTitle = "mb-4 text-sm font-semibold text-slate-900";
 
 type GroupKey = "from" | "to" | "bank" | "signatory";
@@ -26,8 +34,13 @@ function loadDraft(): InvoiceData {
   const defaults = createDefaultInvoice();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
+    // One-time: a draft saved before the organization had a name gets it as
+    // its header. After that, a header the vendor blanks out stays blank.
+    const applyBrand = !localStorage.getItem(BRAND_APPLIED_KEY);
+    if (applyBrand) localStorage.setItem(BRAND_APPLIED_KEY, "1");
     if (!raw) return defaults;
     const saved = JSON.parse(raw) as Partial<InvoiceData>;
+    if (applyBrand && !saved.brand?.trim()) saved.brand = ORG_NAME;
     return {
       ...defaults,
       ...saved,
@@ -62,6 +75,11 @@ function Field({
 export function InvoiceBuilder() {
   const [data, setData] = useState<InvoiceData>(loadDraft);
   const [signatureError, setSignatureError] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  const [fillRange, setFillRange] = useState(currentMonthRange);
+  const [filling, setFilling] = useState(false);
+  const [fillMessage, setFillMessage] = useState("");
 
   useEffect(() => {
     try {
@@ -83,7 +101,10 @@ export function InvoiceBuilder() {
     setData((prev) => ({ ...prev, [group]: { ...prev[group], [field]: value } }));
   }
 
-  function updateItem(id: string, field: keyof Omit<LineItem, "id">, value: string) {
+  function updateItem(id: string, field: keyof Omit<LineItem, "id">, rawValue: string) {
+    // Quantities and rates can't be negative.
+    const value =
+      field === "qty" || field === "rate" ? rawValue.replace(/-/g, "") : rawValue;
     setData((prev) => ({
       ...prev,
       items: prev.items.map((item) =>
@@ -107,14 +128,83 @@ export function InvoiceBuilder() {
       ...prev,
       ...defaultDates(),
       invoiceNo: nextInvoiceNo(prev.invoiceNo),
-      items: [newLineItem()],
+      items: presetLineItems(),
     }));
+    setFillMessage("");
+  }
+
+  async function fillFromInterviews() {
+    const { from, to } = fillRange;
+    if (!from || !to || from > to) {
+      setFillMessage("Pick a valid date range first.");
+      return;
+    }
+    const hasAmounts = data.items.some((item) => lineAmount(item) > 0);
+    if (
+      hasAmounts &&
+      !window.confirm("Replace the current line items with counts from approved interviews?")
+    ) {
+      return;
+    }
+
+    setFilling(true);
+    setFillMessage("");
+    const { data: rows, error } = await createClient()
+      .from("interview_entries")
+      .select("duration_minutes, outcome")
+      .in("status", ["approved", "paid"])
+      .gte("interview_date", from)
+      .lte("interview_date", to)
+      .returns<{ duration_minutes: number | null; outcome: string }[]>();
+    setFilling(false);
+
+    if (error) {
+      setFillMessage("Couldn't load the interviews. Please try again.");
+      return;
+    }
+
+    const counts = new Map<string, number>();
+    let billed = 0;
+    let noSlot = 0;
+    let unpaidStatus = 0;
+    for (const row of rows ?? []) {
+      if (row.duration_minutes === null || !isOfferedDuration(row.duration_minutes)) {
+        noSlot += 1;
+      } else if (outcomeOf(row.outcome).payoutPercent === 0) {
+        unpaidStatus += 1;
+      } else {
+        const key = `${row.duration_minutes}:${row.outcome}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+        billed += 1;
+      }
+    }
+
+    const leftOut = [
+      noSlot ? `${noSlot} without a 60 or 90 minute slot` : "",
+      unpaidStatus ? `${unpaidStatus} with a 0% interview status` : "",
+    ].filter(Boolean);
+    const leftOutNote = leftOut.length ? ` Left out: ${leftOut.join(", ")}.` : "";
+
+    const items = claimLineItems((minutes, outcome) => counts.get(`${minutes}:${outcome}`) ?? 0);
+    if (items.length === 0) {
+      setFillMessage(`No billable approved interviews in that range.${leftOutNote}`);
+      return;
+    }
+
+    setField("items", items);
+    setFillMessage(
+      `Filled ${billed} interview${billed === 1 ? "" : "s"} across ${items.length} line${items.length === 1 ? "" : "s"}.${leftOutNote}`,
+    );
   }
 
   function handleSignature(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    if (!["image/png", "image/jpeg"].includes(file.type)) {
+      setSignatureError("Please use a PNG or JPG image.");
+      return;
+    }
     if (file.size > MAX_SIGNATURE_BYTES) {
       setSignatureError("Please use an image under 500 KB.");
       return;
@@ -125,24 +215,33 @@ export function InvoiceBuilder() {
     reader.readAsDataURL(file);
   }
 
-  function downloadPdf() {
-    const previousTitle = document.title;
-    document.title = `Invoice ${data.invoiceNo}`.trim();
-    window.addEventListener(
-      "afterprint",
-      () => {
-        document.title = previousTitle;
-      },
-      { once: true },
-    );
-    window.print();
+  async function downloadPdf() {
+    setDownloadError("");
+    setDownloading(true);
+    try {
+      // Loaded on demand so the PDF library isn't part of the page's initial bundle.
+      const { createInvoicePdf } = await import("@/components/invoice-pdf");
+      const blob = await createInvoicePdf(data);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Invoice-${data.invoiceNo.trim().replace(/[^\w.-]+/g, "-") || "draft"}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch {
+      setDownloadError("Couldn't create the PDF. If you added a signature, try a PNG or JPG image.");
+    } finally {
+      setDownloading(false);
+    }
   }
 
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3 print:hidden">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Invoices</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Invoices</h1>
           <p className="mt-1 text-sm text-slate-500">
             Fill in the details, check the preview, then download it as a PDF.
           </p>
@@ -159,18 +258,23 @@ export function InvoiceBuilder() {
           <button
             type="button"
             onClick={downloadPdf}
-            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            disabled={downloading}
+            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
           >
-            <Printer className="h-4 w-4" />
-            Download PDF
+            <Download className="h-4 w-4" />
+            {downloading ? "Preparing..." : "Download PDF"}
           </button>
         </div>
       </div>
 
+      {downloadError ? (
+        <p className="mb-4 text-sm text-red-600 print:hidden">{downloadError}</p>
+      ) : null}
+
       <div className="space-y-6 print:hidden">
         <section className={cardClass}>
           <h2 className={cardTitle}>Invoice details</h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <Field label="Invoice no.">
               <input
                 className={inputClass}
@@ -288,6 +392,41 @@ export function InvoiceBuilder() {
 
         <section className={cardClass}>
           <h2 className={cardTitle}>Line items</h2>
+          <div className="mb-5 rounded-xl bg-slate-50 p-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <Field label="Interviews from">
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={fillRange.from}
+                  onChange={(e) => setFillRange((r) => ({ ...r, from: e.target.value }))}
+                />
+              </Field>
+              <Field label="to">
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={fillRange.to}
+                  onChange={(e) => setFillRange((r) => ({ ...r, to: e.target.value }))}
+                />
+              </Field>
+              <button
+                type="button"
+                onClick={fillFromInterviews}
+                disabled={filling}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+              >
+                <ListChecks className="h-4 w-4" />
+                {filling ? "Counting..." : "Fill from approved interviews"}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              {fillMessage ||
+                `Counts approved and paid interviews in this range and bills them at ${INTERVIEW_DURATIONS.map(
+                  (d) => `₹${d.claimRate.toLocaleString("en-IN")} (${d.minutes} mins)`,
+                ).join(" and ")}, reduced to 50% or 30% where the interview status says so.`}
+            </p>
+          </div>
           <div className="space-y-3">
             {data.items.map((item, index) => (
               <div key={item.id} className="grid grid-cols-12 items-end gap-2">
@@ -416,12 +555,12 @@ export function InvoiceBuilder() {
               </Field>
               <div className="space-y-1 sm:col-span-2">
                 <span className="text-sm font-medium text-slate-700">
-                  Signature image (optional)
+                  Signature image (optional, PNG or JPG)
                 </span>
                 <div className="flex items-center gap-3">
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/png,image/jpeg"
                     onChange={handleSignature}
                     className="block w-full text-sm text-slate-500 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50"
                   />

@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { addPanelist } from "@/app/vendor/actions";
+import { INTERVIEW_DURATIONS } from "@/lib/interview-rates";
 
 const initialState = { error: "", tempPassword: "", email: "" };
 const inputClass =
@@ -28,27 +29,30 @@ export function AddPanelistForm() {
           <input id="email" name="email" type="email" required className={inputClass} />
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-1 sm:col-span-2">
           <label htmlFor="phone" className={labelClass}>
             Phone (optional)
           </label>
           <input id="phone" name="phone" type="tel" className={inputClass} />
         </div>
 
-        <div className="space-y-1">
-          <label htmlFor="default_rate" className={labelClass}>
-            Rate per interview (₹)
-          </label>
-          <input
-            id="default_rate"
-            name="default_rate"
-            type="number"
-            min={0}
-            step="1"
-            required
-            className={inputClass}
-          />
-        </div>
+        {INTERVIEW_DURATIONS.map((duration) => (
+          <div key={duration.minutes} className="space-y-1">
+            <label htmlFor={`rate_${duration.minutes}`} className={labelClass}>
+              {duration.minutes} min payout (₹)
+            </label>
+            <input
+              id={`rate_${duration.minutes}`}
+              name={`rate_${duration.minutes}`}
+              type="number"
+              min={0}
+              step="1"
+              required
+              defaultValue={duration.defaultPayout}
+              className={inputClass}
+            />
+          </div>
+        ))}
 
         {state.error ? (
           <p className="text-sm text-red-600 sm:col-span-2">{state.error}</p>

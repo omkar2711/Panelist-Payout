@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { isOfferedDuration, isOutcomeId } from "@/lib/interview-rates";
+import { todayInIndia } from "@/lib/performance";
 import { createClient } from "@/lib/supabase/server";
 
 export async function addEntry(_prevState: unknown, formData: FormData) {
@@ -11,13 +13,28 @@ export async function addEntry(_prevState: unknown, formData: FormData) {
   if (!user) return { error: "Not signed in." };
 
   const interview_date = String(formData.get("interview_date") ?? "");
-  if (!interview_date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(interview_date)) {
     return { error: "Interview date is required." };
   }
 
-  const start_time = String(formData.get("start_time") ?? "") || null;
-  const durationRaw = formData.get("duration_minutes");
-  const duration_minutes = durationRaw ? Number(durationRaw) : null;
+  if (interview_date > todayInIndia()) {
+    return { error: "The interview date can't be in the future." };
+  }
+
+  const start_time = String(formData.get("start_time") ?? "");
+  if (!/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(start_time)) {
+    return { error: "Start time is required." };
+  }
+
+  const duration_minutes = Number(formData.get("duration_minutes"));
+  if (!isOfferedDuration(duration_minutes)) {
+    return { error: "Choose the scheduled duration: 60 or 90 minutes." };
+  }
+  const outcome = String(formData.get("outcome") ?? "");
+  if (!isOutcomeId(outcome)) {
+    return { error: "Choose the interview status." };
+  }
+
   const interview_type = String(formData.get("interview_type") ?? "") || null;
   const candidate_ref = String(formData.get("candidate_ref") ?? "") || null;
   const notes = String(formData.get("notes") ?? "") || null;
@@ -29,12 +46,19 @@ export async function addEntry(_prevState: unknown, formData: FormData) {
     interview_date,
     start_time,
     duration_minutes,
+    outcome,
     interview_type,
     candidate_ref,
     notes,
   });
 
   if (error) {
+    if (error.code === "23505") {
+      return { error: "You've already logged an interview at that date and time." };
+    }
+    if (error.code === "42501") {
+      return { error: "This entry wasn't accepted. If your account is active, check the details and try again." };
+    }
     return { error: error.message };
   }
 

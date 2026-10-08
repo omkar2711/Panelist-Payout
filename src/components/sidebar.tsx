@@ -4,18 +4,23 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   CheckSquare,
+  ClipboardList,
   FileText,
   LayoutDashboard,
+  Trophy,
   Users,
   Wallet,
-  Wallet2,
 } from "lucide-react";
+import { Avatar } from "./avatar";
+import { BrandLogo } from "./brand-logo";
 import { SignOutButton } from "./sign-out-button";
 
 const NAV_ICONS = {
   dashboard: LayoutDashboard,
   approvals: CheckSquare,
+  interviews: ClipboardList,
   panelists: Users,
+  leaderboard: Trophy,
   payments: Wallet,
   invoice: FileText,
 } as const;
@@ -30,60 +35,91 @@ export function Sidebar({
   pendingCount?: number;
 }) {
   const pathname = usePathname();
+  const isActive = (href: string) =>
+    href === "/vendor" ? pathname === "/vendor" : pathname.startsWith(href);
+  const badge = (icon: string) =>
+    icon === "approvals" && pendingCount ? (
+      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-amber-800">
+        {pendingCount}
+      </span>
+    ) : null;
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white print:hidden">
-      <div className="flex items-center gap-2 border-b border-slate-200 px-6 py-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
-          <Wallet2 className="h-4.5 w-4.5" strokeWidth={2.25} />
+    <>
+      {/* Small screens: a top bar with a scrollable row of links */}
+      <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-white/85 backdrop-blur lg:hidden print:hidden">
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <BrandLogo className="h-8" />
+          <div className="flex items-center gap-1.5">
+            <Avatar name={userLabel} />
+            <SignOutButton />
+          </div>
         </div>
-        <div>
-          <p className="text-sm font-semibold text-slate-900">Panelist Payout</p>
-          <p className="text-xs text-slate-400">Vendor console</p>
-        </div>
-      </div>
-
-      <nav className="flex-1 space-y-1 p-3">
-        {links.map((link) => {
-          const Icon = NAV_ICONS[link.icon];
-          const isActive =
-            link.href === "/vendor"
-              ? pathname === "/vendor"
-              : pathname.startsWith(link.href);
-
-          return (
+        <nav className="flex gap-1 overflow-x-auto px-3 pb-2">
+          {links.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                isActive
+              className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                isActive(link.href)
                   ? "bg-blue-50 text-blue-700"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                  : "text-slate-500 hover:text-slate-900"
               }`}
             >
-              <span className="flex items-center gap-2.5">
-                <Icon className="h-4 w-4" strokeWidth={2} />
-                {link.label}
-              </span>
-              {link.icon === "approvals" && pendingCount ? (
-                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
-                  {pendingCount}
-                </span>
-              ) : null}
+              {link.label}
+              {badge(link.icon)}
             </Link>
-          );
-        })}
-      </nav>
+          ))}
+        </nav>
+      </header>
 
-      <div className="flex items-center justify-between border-t border-slate-200 px-4 py-4">
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
-            {userLabel.slice(0, 1).toUpperCase()}
-          </div>
-          <span className="text-xs font-medium text-slate-600">{userLabel}</span>
+      {/* Large screens: a fixed-height sidebar */}
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-slate-200/80 bg-white lg:flex print:hidden">
+        <div className="px-5 pb-3 pt-5">
+          <BrandLogo className="h-10" />
+          <p className="mt-2 text-[11px] font-medium uppercase tracking-wider text-slate-400">
+            Vendor console
+          </p>
         </div>
-        <SignOutButton />
-      </div>
-    </aside>
+
+        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
+          {links.map((link) => {
+            const Icon = NAV_ICONS[link.icon];
+            const active = isActive(link.href);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`group flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+                  active
+                    ? "bg-blue-50 text-blue-700"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                }`}
+              >
+                <span className="flex items-center gap-3">
+                  <Icon
+                    className={`h-4.5 w-4.5 ${active ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600"}`}
+                    strokeWidth={2}
+                  />
+                  {link.label}
+                </span>
+                {badge(link.icon)}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="m-3 flex items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2.5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Avatar name={userLabel} />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-slate-800">{userLabel}</p>
+              <p className="text-xs text-slate-400">Vendor</p>
+            </div>
+          </div>
+          <SignOutButton />
+        </div>
+      </aside>
+    </>
   );
 }

@@ -107,12 +107,11 @@ export function RecordPaymentForm({
             id="amount"
             name="amount"
             type="number"
-            min={0}
-            key={suggestedAmount}
-            defaultValue={suggestedAmount || undefined}
-            required
-            className={inputClass}
+            readOnly
+            value={suggestedAmount}
+            className={`${inputClass} bg-slate-50 tabular-nums`}
           />
+          <p className="text-xs text-slate-400">Total of the ticked interviews.</p>
         </div>
 
         <div className="space-y-1">
