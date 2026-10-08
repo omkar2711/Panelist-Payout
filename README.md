@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Panelist Payout Manager
 
-## Getting Started
+Tracks interviews conducted by external panelists and what's owed to each of
+them, with separate logins for the vendor (admin) and each panelist.
 
-First, run the development server:
+## Stack
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+Next.js 16 (App Router) + Supabase (Postgres, Auth, Row Level Security) +
+Recharts, styled with Tailwind CSS.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## One-time setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. **Create a Supabase project** at [supabase.com](https://supabase.com) (the
+   free tier is enough for under ~20 panelists).
+2. **Run the schema**: open the SQL editor in your Supabase project and run
+   the contents of [`supabase/schema.sql`](supabase/schema.sql). This creates
+   all tables, the approval-locking trigger, the balances view, the payment
+   RPC, and Row Level Security policies.
+3. **Copy environment variables**: `cp .env.local.example .env.local` and
+   fill in `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
+   `SUPABASE_SERVICE_ROLE_KEY` from Project Settings → API in Supabase.
+4. **Create your own vendor account** (one-time, manual — there's no vendor
+   signup screen by design):
+   - In the Supabase dashboard, go to Authentication → Users → Add user, and
+     create a user with your email and a password.
+   - In the SQL editor, run:
+     ```sql
+     insert into profiles (id, role, full_name, email)
+     values ('<the new user''s UUID from the Users tab>', 'vendor', 'Your Name', 'you@example.com');
+     ```
+5. **Install dependencies and run**:
+   ```bash
+   npm install
+   npm run dev
+   ```
+   Sign in at `http://localhost:3000/login` with the vendor account you just
+   created.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Adding panelists
 
-## Learn More
+Once signed in as the vendor, go to **Panelists → Add panelist**. This creates
+their login account (via the Supabase service role key, server-side only) and
+shows a one-time temporary password — share that with the panelist directly
+so they can sign in and change it.
 
-To learn more about Next.js, take a look at the following resources:
+## How the numbers work
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. A panelist logs an interview (date, time, type) — status `submitted`.
+2. The vendor reviews it under **Approvals** and approves or rejects it. On
+   approval, the panelist's current rate is locked into that entry
+   permanently, so later rate changes never retroactively change it.
+3. Approved-but-unpaid entries make up the "amount due" shown on both
+   dashboards.
+4. When the vendor records a payment, they pick which approved entries it
+   covers; those entries flip to `paid` and drop out of the amount due.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Project structure
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `supabase/schema.sql` — the entire database schema, RLS policies, and the
+  `record_payment` function. This is the source of truth for the data model.
+- `src/app/vendor/*` — vendor dashboard, panelist management, approvals,
+  payments.
+- `src/app/panelist/*` — panelist dashboard and interview logging.
+- `src/lib/supabase/` — browser client, server client (cookie-based session),
+  and the admin client (service role, server-only) used to create panelist
+  accounts.
+- `src/proxy.ts` — refreshes the Supabase session on every request and
+  redirects unauthenticated visitors away from `/vendor` and `/panelist`
+  (Next.js 16 renamed `middleware.ts` to `proxy.ts`).
