@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { AddPanelistForm } from "@/components/add-panelist-form";
 import { Avatar } from "@/components/avatar";
 import { PageHeader } from "@/components/page-header";
+import { ResetPanelistPassword } from "@/components/reset-panelist-password";
 import { updateRates, togglePanelistActive } from "@/app/vendor/actions";
 import type { Panelist, Profile } from "@/lib/types";
 
@@ -68,7 +69,13 @@ export default async function PanelistsPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-3 text-slate-500">{p.profiles.email}</td>
+                      <td className="px-6 py-3 text-slate-500">
+                        <p className="mb-1.5">{p.profiles.email}</p>
+                        <ResetPanelistPassword
+                          panelistId={p.id}
+                          name={p.profiles.full_name}
+                        />
+                      </td>
                       <td className="px-6 py-3">
                         <form action={updateRates} className="flex flex-wrap items-center gap-2">
                           <input type="hidden" name="panelist_id" value={p.id} />

@@ -88,6 +88,31 @@ export async function addPanelist(_prevState: unknown, formData: FormData) {
   return { error: "", tempPassword, email };
 }
 
+// For a panelist who has forgotten their password: sets a fresh temporary one
+// for the vendor to pass on, so no reset email is needed.
+export async function resetPanelistPassword(_prevState: unknown, formData: FormData) {
+  await assertVendor();
+
+  const panelistId = String(formData.get("panelist_id") ?? "");
+  const admin = createAdminClient();
+
+  // Only panelist logins can be reset from here, never the vendor's own.
+  const { data: panelist } = await admin
+    .from("panelists")
+    .select("id")
+    .eq("id", panelistId)
+    .maybeSingle();
+  if (!panelist) return { error: "Panelist not found.", tempPassword: "" };
+
+  const tempPassword = randomUUID().slice(0, 12);
+  const { error } = await admin.auth.admin.updateUserById(panelistId, {
+    password: tempPassword,
+  });
+  if (error) return { error: error.message, tempPassword: "" };
+
+  return { error: "", tempPassword };
+}
+
 export async function updateRates(formData: FormData) {
   const { supabase } = await assertVendor();
 
