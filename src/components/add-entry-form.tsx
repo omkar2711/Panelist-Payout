@@ -132,8 +132,8 @@ export function AddEntryForm({ today }: { today: string }) {
       ) : null}
 
       <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:col-span-2">
-        An interview is approved only after NxtWave&apos;s team confirms it, so make sure
-        this entry matches the interview exactly.
+        Your logged interview will be matched with the data provided by NxtWave&apos;s team,
+        and then the vendor will approve it.
       </p>
 
       <button
