@@ -5,12 +5,7 @@ import {
   type PendingItem,
 } from "@/components/vendor-dashboard";
 import { fetchAllEntries } from "@/lib/all-entries";
-import {
-  financeSummary,
-  monthLabel,
-  stalePendingCount,
-  todayInIndia,
-} from "@/lib/performance";
+import { financeByMonth, stalePendingCount, todayInIndia } from "@/lib/performance";
 import type { PanelistBalance } from "@/lib/types";
 
 type WithPanelist = { panelists: { profiles: { full_name: string } } };
@@ -66,7 +61,8 @@ export default async function VendorDashboardPage() {
 
   const today = todayInIndia();
   const thisMonth = today.slice(0, 7);
-  const monthFinance = financeSummary(entries, thisMonth);
+  const received = (receiptRows ?? []).reduce((sum, row) => sum + row.amount, 0);
+  const ledger = financeByMonth(entries, received);
   // Payouts run monthly, so anything approved for an earlier month is overdue.
   const overdue = entries.filter(
     (entry) => entry.status === "approved" && entry.interview_date < `${thisMonth}-01`,
@@ -96,12 +92,12 @@ export default async function VendorDashboardPage() {
       pending={pending}
       pendingTotal={pendingTotal ?? pending.length}
       payments={payments}
-      finance={{ monthLabel: monthLabel(thisMonth), ...monthFinance }}
+      ledger={{ ...ledger, currentMonth: thisMonth }}
       cash={{
-        received: (receiptRows ?? []).reduce((sum, row) => sum + row.amount, 0),
+        received,
         paidOut: payments.reduce((sum, payment) => sum + payment.amount, 0),
         owed: (balances ?? []).reduce((sum, row) => sum + row.amount_due, 0),
-        billableAllTime: financeSummary(entries).billable,
+        billableAllTime: ledger.totals.billable,
       }}
       attention={{
         stalePending: stalePendingCount(entries, 3),

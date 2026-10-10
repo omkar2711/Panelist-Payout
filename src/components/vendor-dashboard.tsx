@@ -17,6 +17,7 @@ import { EarningsChart } from "@/components/earnings-chart";
 import { FeatureTile, StatTile, cardClass } from "@/components/stat-tile";
 import { formatCurrency, formatDate, formatTime, monthAxisLabel } from "@/lib/format";
 import { outcomeOf } from "@/lib/interview-rates";
+import type { MonthFinance } from "@/lib/performance";
 import type { PanelistBalance } from "@/lib/types";
 
 export type PendingItem = {
@@ -77,13 +78,13 @@ function CardLink({ href, children }: { href: string; children: string }) {
   );
 }
 
-export type Finance = {
-  monthLabel: string;
-  billable: number;
-  cost: number;
-  margin: number;
-  interviews: number;
+export type Ledger = {
+  months: MonthFinance[];
+  totals: Omit<MonthFinance, "key" | "label">;
+  owedInterviews: number;
   unbillable: number;
+  advance: number;
+  currentMonth: string;
 };
 
 export type Cash = {
@@ -127,13 +128,133 @@ function CashRow({
   );
 }
 
+function Unpaid({ value, tone }: { value: number; tone: string }) {
+  return value > 0 ? (
+    <span className={`font-semibold ${tone}`}>{formatCurrency(value)}</span>
+  ) : (
+    <span className="text-slate-400">Settled</span>
+  );
+}
+
+// Every month with approved interviews: what NxtWave owes for it and what the
+// panelists are owed for it.
+function MonthLedger({ ledger }: { ledger: Ledger }) {
+  const money = "px-4 py-3 text-right tabular-nums";
+  const head = "px-4 py-2 text-right font-medium";
+  return (
+    <section className={cardClass}>
+      <div className="border-b border-slate-100 px-6 py-4">
+        <h2 className="text-sm font-semibold text-slate-900">Month by month</h2>
+        <p className="mt-0.5 text-xs text-slate-400">
+          Approved interviews, by the month they took place. Money received from NxtWave is
+          counted against the oldest unpaid month first.
+        </p>
+      </div>
+      {ledger.months.length === 0 ? (
+        <p className="px-6 py-8 text-center text-sm text-slate-400">
+          Nothing approved yet. Months appear here once interviews are approved.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[860px] text-left text-sm">
+            <thead className="text-xs uppercase tracking-wide text-slate-500">
+              <tr className="border-b border-slate-100 bg-slate-50/60">
+                <th colSpan={2} />
+                <th colSpan={3} className="border-l border-slate-200 px-4 py-2 text-center font-semibold text-blue-700">
+                  NxtWave
+                </th>
+                <th colSpan={3} className="border-l border-slate-200 px-4 py-2 text-center font-semibold text-amber-700">
+                  Panelists
+                </th>
+                <th className="border-l border-slate-200" />
+              </tr>
+              <tr className="border-b border-slate-100 bg-slate-50/60">
+                <th className="px-6 py-2 font-medium">Month</th>
+                <th className={head}>Interviews</th>
+                <th className={`${head} border-l border-slate-200`}>Billable</th>
+                <th className={head}>Received</th>
+                <th className={head}>Unpaid</th>
+                <th className={`${head} border-l border-slate-200`}>Payouts</th>
+                <th className={head}>Paid</th>
+                <th className={head}>Unpaid</th>
+                <th className={`${head} border-l border-slate-200`}>Margin</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ledger.months.map((month) => (
+                <tr key={month.key} className="border-t border-slate-100">
+                  <td className="whitespace-nowrap px-6 py-3 font-medium text-slate-800">
+                    {month.label}
+                    {month.key === ledger.currentMonth ? (
+                      <span className="ml-2 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                        This month
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className={`${money} text-slate-600`}>{month.interviews}</td>
+                  <td className={`${money} border-l border-slate-100 text-slate-600`}>
+                    {formatCurrency(month.billable)}
+                  </td>
+                  <td className={`${money} text-slate-600`}>{formatCurrency(month.received)}</td>
+                  <td className={money}>
+                    <Unpaid value={month.receivable} tone="text-blue-700" />
+                  </td>
+                  <td className={`${money} border-l border-slate-100 text-slate-600`}>
+                    {formatCurrency(month.cost)}
+                  </td>
+                  <td className={`${money} text-slate-600`}>{formatCurrency(month.paid)}</td>
+                  <td className={money}>
+                    <Unpaid value={month.owed} tone="text-amber-700" />
+                  </td>
+                  <td
+                    className={`${money} border-l border-slate-100 ${
+                      month.margin < 0 ? "text-red-600" : "text-slate-800"
+                    }`}
+                  >
+                    {formatCurrency(month.margin)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-200 bg-slate-50/60 font-semibold text-slate-900">
+                <td className="px-6 py-3">Total</td>
+                <td className={money}>{ledger.totals.interviews}</td>
+                <td className={`${money} border-l border-slate-200`}>
+                  {formatCurrency(ledger.totals.billable)}
+                </td>
+                <td className={money}>{formatCurrency(ledger.totals.received)}</td>
+                <td className={`${money} text-blue-700`}>{formatCurrency(ledger.totals.receivable)}</td>
+                <td className={`${money} border-l border-slate-200`}>
+                  {formatCurrency(ledger.totals.cost)}
+                </td>
+                <td className={money}>{formatCurrency(ledger.totals.paid)}</td>
+                <td className={`${money} text-amber-700`}>{formatCurrency(ledger.totals.owed)}</td>
+                <td className={`${money} border-l border-slate-200`}>
+                  {formatCurrency(ledger.totals.margin)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+      {ledger.advance > 0 ? (
+        <p className="border-t border-slate-100 px-6 py-3 text-xs text-slate-500">
+          {formatCurrency(ledger.advance)} received from NxtWave is more than everything billable so
+          far, and will count against future months.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 export function VendorDashboard({
   firstName,
   balances,
   pending,
   pendingTotal,
   payments,
-  finance,
+  ledger,
   cash,
   attention,
 }: {
@@ -142,7 +263,7 @@ export function VendorDashboard({
   pending: PendingItem[];
   pendingTotal: number;
   payments: PaymentItem[];
-  finance: Finance;
+  ledger: Ledger;
   cash: Cash;
   attention: Attention;
 }) {
@@ -219,35 +340,44 @@ export function VendorDashboard({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatTile
-          label={`Billable to NxtWave, ${finance.monthLabel}`}
-          value={formatCurrency(finance.billable)}
-          hint={`${plural(finance.interviews, "approved interview")}${
-            finance.unbillable ? `, ${finance.unbillable} without a billable slot` : ""
+          label="Unpaid by NxtWave"
+          value={formatCurrency(ledger.totals.receivable)}
+          hint={`${formatCurrency(ledger.totals.billable)} billable for ${plural(
+            ledger.totals.interviews,
+            "approved interview",
+          )}, ${formatCurrency(cash.received)} received${
+            ledger.unbillable ? `; ${ledger.unbillable} without a billable slot` : ""
           }`}
           icon={FileText}
           tone="bg-blue-50 text-blue-600"
         />
         <StatTile
-          label={`Panelist cost, ${finance.monthLabel}`}
-          value={formatCurrency(finance.cost)}
-          hint="What those interviews pay out"
+          label="Unpaid to panelists"
+          value={formatCurrency(ledger.totals.owed)}
+          hint={
+            ledger.owedInterviews > 0
+              ? `${plural(ledger.owedInterviews, "approved interview")} not yet paid out`
+              : "Every approved interview is paid"
+          }
           icon={Wallet}
           tone="bg-amber-50 text-amber-600"
         />
         <StatTile
-          label={`Margin, ${finance.monthLabel}`}
-          value={formatCurrency(finance.margin)}
+          label="Margin, all time"
+          value={formatCurrency(ledger.totals.margin)}
           hint={
-            finance.interviews === 0
-              ? "Nothing approved yet this month"
-              : finance.margin < 0
+            ledger.totals.interviews === 0
+              ? "Nothing approved yet"
+              : ledger.totals.margin < 0
                 ? "Payouts are higher than what can be billed"
-                : `${Math.round((finance.margin / finance.billable) * 100)}% of the billable amount`
+                : `${Math.round((ledger.totals.margin / ledger.totals.billable) * 100)}% of the billable amount`
           }
           icon={TrendingUp}
           tone="bg-emerald-50 text-emerald-600"
         />
       </div>
+
+      <MonthLedger ledger={ledger} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <div className="space-y-6 xl:col-span-8">

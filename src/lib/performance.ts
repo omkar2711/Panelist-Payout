@@ -262,6 +262,91 @@ export function financeSummary(entries: PerfEntry[], monthKey?: string) {
   return { billable, cost, margin: billable - cost, interviews, unbillable };
 }
 
+export type MonthFinance = {
+  key: string;
+  label: string;
+  interviews: number;
+  // NxtWave side
+  billable: number;
+  received: number;
+  receivable: number;
+  // panelist side
+  cost: number;
+  paid: number;
+  owed: number;
+  margin: number;
+};
+
+// Money for approved interviews, grouped by the month the interview took place,
+// newest month first. The panelist figures are exact. Receipts from NxtWave are
+// lump sums that aren't tied to particular interviews, so they are counted
+// against the oldest unpaid month first.
+export function financeByMonth(entries: PerfEntry[], receivedTotal: number) {
+  const byKey = new Map<string, MonthFinance>();
+  let owedInterviews = 0;
+  let unbillable = 0;
+  for (const entry of entries) {
+    if (!isApproved(entry)) continue;
+    const key = entry.interview_date.slice(0, 7);
+    let month = byKey.get(key);
+    if (!month) {
+      month = {
+        key,
+        label: monthLabel(key),
+        interviews: 0,
+        billable: 0,
+        received: 0,
+        receivable: 0,
+        cost: 0,
+        paid: 0,
+        owed: 0,
+        margin: 0,
+      };
+      byKey.set(key, month);
+    }
+    const amount = entry.amount ?? 0;
+    month.interviews += 1;
+    month.cost += amount;
+    if (entry.status === "paid") month.paid += amount;
+    else {
+      month.owed += amount;
+      owedInterviews += 1;
+    }
+    const claim = claimFor(entry);
+    if (claim === null) unbillable += 1;
+    else month.billable += claim;
+  }
+
+  const oldestFirst = [...byKey.values()].sort((a, b) => a.key.localeCompare(b.key));
+  let unallocated = receivedTotal;
+  for (const month of oldestFirst) {
+    month.received = Math.min(unallocated, month.billable);
+    unallocated -= month.received;
+    month.receivable = month.billable - month.received;
+    month.margin = month.billable - month.cost;
+  }
+
+  const sum = (pick: (month: MonthFinance) => number) =>
+    oldestFirst.reduce((total, month) => total + pick(month), 0);
+  return {
+    months: oldestFirst.reverse(),
+    totals: {
+      interviews: sum((m) => m.interviews),
+      billable: sum((m) => m.billable),
+      received: sum((m) => m.received),
+      receivable: sum((m) => m.receivable),
+      cost: sum((m) => m.cost),
+      paid: sum((m) => m.paid),
+      owed: sum((m) => m.owed),
+      margin: sum((m) => m.margin),
+    },
+    owedInterviews,
+    unbillable,
+    // Money received beyond everything billable so far.
+    advance: unallocated,
+  };
+}
+
 // Entries that have sat unreviewed for longer than `days`.
 export function stalePendingCount(
   entries: { status: EntryStatus; created_at: string }[],
