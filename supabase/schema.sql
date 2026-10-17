@@ -35,7 +35,7 @@ create table interview_entries (
   interview_type text,
   -- How the interview turned out; decides what share of the rate is paid.
   outcome text not null default 'completed' check (
-    outcome in ('completed', 'partial', 'student_no_show', 'interviewer_no_show', 'wrong_interview')
+    outcome in ('completed', 'partial', 'student_no_show', 'cancelled', 'interviewer_no_show', 'wrong_interview')
   ),
   candidate_ref text,
   notes text,
@@ -242,7 +242,7 @@ as $$
   left join interview_entries ie
     on ie.panelist_id = p.id
    and ie.status in ('approved', 'paid')
-   and ie.outcome not in ('interviewer_no_show', 'wrong_interview')
+   and ie.outcome not in ('cancelled', 'interviewer_no_show', 'wrong_interview')
   where p.active
     and exists (select 1 from profiles me where me.id = auth.uid())
   group by p.id, pr.full_name

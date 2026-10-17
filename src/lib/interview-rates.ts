@@ -10,7 +10,7 @@ export const INTERVIEW_DURATIONS = [
   {
     minutes: 90,
     defaultPayout: 1500,
-    claimRate: 1800,
+    claimRate: 1700,
     invoiceName: "Technical Interview - 90 mins",
   },
 ] as const;
@@ -32,9 +32,15 @@ export const INTERVIEW_OUTCOMES = [
   },
   {
     id: "student_no_show",
-    label: "Interviewer joined, but Student No-Show / Cancelled",
-    short: "Student no-show / cancelled",
+    label: "Interviewer joined, but Student No-Show",
+    short: "Student no-show",
     payoutPercent: 30,
+  },
+  {
+    id: "cancelled",
+    label: "Cancelled",
+    short: "Cancelled",
+    payoutPercent: 0,
   },
   {
     id: "interviewer_no_show",

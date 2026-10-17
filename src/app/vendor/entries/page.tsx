@@ -10,18 +10,72 @@ import type { InterviewEntry, Profile } from "@/lib/types";
 
 type Row = InterviewEntry & { panelists: { profiles: Pick<Profile, "full_name"> } };
 
-export default async function EntriesPage() {
+const HISTORY_PAGE_SIZE = 20;
+const ROW_FIELDS = "*, panelists(profiles(full_name))";
+
+function PageLink({
+  page,
+  disabled,
+  children,
+}: {
+  page: number;
+  disabled: boolean;
+  children: string;
+}) {
+  const className =
+    "rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700";
+  if (disabled) {
+    return <span className={`${className} cursor-not-allowed opacity-40`}>{children}</span>;
+  }
+  return (
+    <Link
+      href={`/vendor/entries?page=${page}`}
+      scroll={false}
+      className={`${className} hover:bg-slate-50`}
+    >
+      {children}
+    </Link>
+  );
+}
+
+export default async function EntriesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const { page } = await searchParams;
+  const requestedPage = typeof page === "string" ? Number.parseInt(page, 10) || 1 : 1;
   const supabase = await createClient();
 
-  const { data: entries } = await supabase
+  const [{ data: pendingRows }, { count: historyCount }] = await Promise.all([
+    supabase
+      .from("interview_entries")
+      .select(ROW_FIELDS)
+      .eq("status", "submitted")
+      .order("created_at", { ascending: false })
+      .returns<Row[]>(),
+    supabase
+      .from("interview_entries")
+      .select("id", { count: "exact", head: true })
+      .neq("status", "submitted"),
+  ]);
+
+  // Only one page of history is loaded at a time.
+  const historyTotal = historyCount ?? 0;
+  const pageCount = Math.max(1, Math.ceil(historyTotal / HISTORY_PAGE_SIZE));
+  const currentPage = Math.min(Math.max(1, requestedPage), pageCount);
+  const firstRow = (currentPage - 1) * HISTORY_PAGE_SIZE;
+  const { data: historyRows } = await supabase
     .from("interview_entries")
-    .select("*, panelists(profiles(full_name))")
+    .select(ROW_FIELDS)
+    .neq("status", "submitted")
     .order("created_at", { ascending: false })
+    .order("id")
+    .range(firstRow, firstRow + HISTORY_PAGE_SIZE - 1)
     .returns<Row[]>();
 
-  const rows = entries ?? [];
-  const pending = rows.filter((e) => e.status === "submitted");
-  const rest = rows.filter((e) => e.status !== "submitted");
+  const pending = pendingRows ?? [];
+  const rest = historyRows ?? [];
 
   return (
     <div>
@@ -118,7 +172,7 @@ export default async function EntriesPage() {
 
       <section className="mt-6 rounded-2xl border border-slate-200/80 bg-white shadow-sm">
         <h2 className="border-b border-slate-100 px-6 py-4 text-sm font-semibold text-slate-900">
-          History
+          History ({historyTotal})
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -192,6 +246,24 @@ export default async function EntriesPage() {
             </tbody>
           </table>
         </div>
+        {pageCount > 1 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-6 py-3 text-sm">
+            <p className="text-slate-500">
+              Showing {firstRow + 1}–{firstRow + rest.length} of {historyTotal}
+            </p>
+            <div className="flex items-center gap-2">
+              <PageLink page={currentPage - 1} disabled={currentPage <= 1}>
+                Previous
+              </PageLink>
+              <span className="px-1 tabular-nums text-slate-500">
+                Page {currentPage} of {pageCount}
+              </span>
+              <PageLink page={currentPage + 1} disabled={currentPage >= pageCount}>
+                Next
+              </PageLink>
+            </div>
+          </div>
+        ) : null}
       </section>
     </div>
   );
