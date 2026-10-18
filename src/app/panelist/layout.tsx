@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getSignedInProfile, getSignedInUserId } from "@/lib/session";
 import { Nav } from "@/components/nav";
 import { ORG_NAME } from "@/lib/brand";
 
@@ -8,27 +9,17 @@ export default async function PanelistLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const userId = await getSignedInUserId();
+  if (!userId) redirect("/login");
+
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) redirect("/login");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, full_name")
-    .eq("id", user.id)
-    .single();
+  const [profile, { data: panelist }] = await Promise.all([
+    getSignedInProfile(),
+    supabase.from("panelists").select("active").eq("id", userId).maybeSingle(),
+  ]);
 
   if (!profile) redirect("/login?error=no-account");
   if (profile.role !== "panelist") redirect("/vendor");
-
-  const { data: panelist } = await supabase
-    .from("panelists")
-    .select("active")
-    .eq("id", user.id)
-    .single();
   if (!panelist?.active) redirect("/login?error=inactive");
 
   return (

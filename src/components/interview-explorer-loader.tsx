@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import dynamic from "next/dynamic";
 import type { InterviewRow } from "./interview-explorer";
 
@@ -15,6 +16,8 @@ const InterviewExplorer = dynamic(
 export function InterviewExplorerLoader(props: {
   rows: InterviewRow[];
   panelists: { id: string; name: string }[];
+  initialRange?: { from: string; to: string } | null;
+  periodPicker?: ReactNode;
 }) {
   return <InterviewExplorer {...props} />;
 }

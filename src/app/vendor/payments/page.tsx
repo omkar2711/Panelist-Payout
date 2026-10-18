@@ -1,6 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { Avatar } from "@/components/avatar";
 import { PageHeader } from "@/components/page-header";
+import { PeriodPicker } from "@/components/period-picker";
+import { inPeriod, parsePeriod } from "@/lib/period";
+import { periodMonths } from "@/lib/period-months";
 import { ReceiptForm } from "@/components/receipt-form";
 import { RecordPaymentForm } from "@/components/record-payment-form";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -17,11 +20,21 @@ type Receipt = {
 };
 type PaymentRow = Payment & { panelists: { profiles: Pick<Profile, "full_name"> } };
 
-export default async function PaymentsPage() {
+export default async function PaymentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const period = parsePeriod((await searchParams).period);
   const supabase = await createClient();
 
-  const [{ data: panelists }, { data: approvedEntries }, { data: payments }, { data: receipts }] =
-    await Promise.all([
+  const [
+    { data: panelists },
+    { data: approvedEntries },
+    { data: allPayments },
+    { data: allReceipts },
+    months,
+  ] = await Promise.all([
       supabase
         .from("panelists")
         .select("*, profiles(full_name)")
@@ -42,7 +55,14 @@ export default async function PaymentsPage() {
         .select("id, amount, received_on, period_label, notes")
         .order("received_on", { ascending: false })
         .returns<Receipt[]>(),
+      periodMonths(supabase),
     ]);
+
+  // Payments and receipts follow the date the money moved; the payment form
+  // offers the chosen month's approved interviews.
+  const payments = (allPayments ?? []).filter((p) => inPeriod(period, p.paid_on));
+  const receipts = (allReceipts ?? []).filter((r) => inPeriod(period, r.received_on));
+  const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
 
   // Active panelists, plus inactive ones who are still owed money.
   const owedIds = new Set((approvedEntries ?? []).map((e) => e.panelist_id));
@@ -53,7 +73,9 @@ export default async function PaymentsPage() {
       full_name: p.active ? p.profiles.full_name : `${p.profiles.full_name} (inactive)`,
     }));
 
-  const entries = (approvedEntries ?? []).map((e) => ({
+  const entries = (approvedEntries ?? [])
+    .filter((e) => inPeriod(period, e.interview_date))
+    .map((e) => ({
     ...e,
     amount: e.amount ?? 0,
   }));
@@ -62,7 +84,12 @@ export default async function PaymentsPage() {
     <div>
       <PageHeader
         title="Payments"
-        description="Pay panelists against approved interviews and see history."
+        description={
+          period.isAll
+            ? "Pay panelists against approved interviews and see history."
+            : `Payments and receipts in ${period.label}; the form lists ${period.label} interviews.`
+        }
+        actions={<PeriodPicker months={months} value={period.key} />}
       />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
@@ -80,9 +107,17 @@ export default async function PaymentsPage() {
         </section>
 
         <section className="rounded-2xl border border-slate-200/80 bg-white shadow-sm xl:col-span-7 xl:self-start">
-          <h2 className="border-b border-slate-100 px-6 py-4 text-sm font-semibold text-slate-900">
-            Payment history
-          </h2>
+          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+            <h2 className="text-sm font-semibold text-slate-900">
+              Payment history{period.isAll ? "" : ` · ${period.label}`}
+            </h2>
+            <p className="text-sm text-slate-500">
+              Total paid:{" "}
+              <span className="font-semibold tabular-nums text-slate-900">
+                {formatCurrency(paidTotal)}
+              </span>
+            </p>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
@@ -94,10 +129,10 @@ export default async function PaymentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {!payments || payments.length === 0 ? (
+                {payments.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-6 py-6 text-center text-slate-400">
-                      No payments recorded yet.
+                      {period.isAll ? "No payments recorded yet." : `No payments made in ${period.label}.`}
                     </td>
                   </tr>
                 ) : (
@@ -145,11 +180,13 @@ export default async function PaymentsPage() {
 
         <section className="rounded-2xl border border-slate-200/80 bg-white shadow-sm xl:col-span-7 xl:self-start">
           <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-            <h3 className="text-sm font-semibold text-slate-900">Receipts</h3>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Receipts{period.isAll ? "" : ` · ${period.label}`}
+            </h3>
             <p className="text-sm text-slate-500">
               Total received:{" "}
               <span className="font-semibold tabular-nums text-slate-900">
-                {formatCurrency((receipts ?? []).reduce((sum, r) => sum + r.amount, 0))}
+                {formatCurrency(receipts.reduce((sum, r) => sum + r.amount, 0))}
               </span>
             </p>
           </div>
@@ -164,10 +201,10 @@ export default async function PaymentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {!receipts || receipts.length === 0 ? (
+                {receipts.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-6 py-6 text-center text-slate-400">
-                      No receipts recorded yet.
+                      {period.isAll ? "No receipts recorded yet." : `No receipts in ${period.label}.`}
                     </td>
                   </tr>
                 ) : (

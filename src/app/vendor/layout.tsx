@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getSignedInProfile, getSignedInUserId } from "@/lib/session";
 import { Sidebar } from "@/components/sidebar";
 
 export default async function VendorLayout({
@@ -7,26 +8,19 @@ export default async function VendorLayout({
 }: {
   children: React.ReactNode;
 }) {
+  if (!(await getSignedInUserId())) redirect("/login");
+
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) redirect("/login");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, full_name")
-    .eq("id", user.id)
-    .single();
+  const [profile, { count: pendingCount }] = await Promise.all([
+    getSignedInProfile(),
+    supabase
+      .from("interview_entries")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "submitted"),
+  ]);
 
   if (!profile) redirect("/login?error=no-account");
   if (profile.role !== "vendor") redirect("/panelist");
-
-  const { count: pendingCount } = await supabase
-    .from("interview_entries")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "submitted");
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-b from-blue-50/60 via-slate-50 to-slate-50 lg:flex-row print:bg-none">

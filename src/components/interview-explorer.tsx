@@ -179,12 +179,19 @@ function compareRows(a: InterviewRow, b: InterviewRow, key: SortKey) {
 export function InterviewExplorer({
   rows,
   panelists,
+  initialRange,
+  periodPicker,
 }: {
   rows: InterviewRow[];
   panelists: { id: string; name: string }[];
+  // the chosen month's first and last day, which pre-fill the date filters
+  initialRange?: { from: string; to: string } | null;
+  periodPicker?: ReactNode;
 }) {
   const [view, setView] = useState<"list" | "activity">("list");
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [filters, setFilters] = useState<Filters>(() =>
+    initialRange ? { ...NO_FILTERS, from: initialRange.from, to: initialRange.to } : NO_FILTERS,
+  );
   const [sort, setSort] = useState<SortState>({ key: "date", descending: true });
   const [page, setPage] = useState(1);
   const [granularity, setGranularity] = useState<Granularity>("week");
@@ -300,6 +307,7 @@ export function InterviewExplorer({
             { id: "activity", label: "Activity" },
           ]}
         />
+        {periodPicker}
       </div>
 
       <section className={`${cardClass} p-5`}>

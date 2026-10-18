@@ -20,7 +20,13 @@ function strikeText(strikes: PanelistStats["reliability"]["strikes"]) {
   return parts.length ? parts.join(", ") : "None";
 }
 
-export function Scorecards({ cards }: { cards: Scorecard[] }) {
+export function Scorecards({
+  cards,
+  monthHeading = "This month",
+}: {
+  cards: Scorecard[];
+  monthHeading?: string;
+}) {
   const th = "px-4 py-2.5 first:pl-6 last:pr-6";
   const td = "px-4 py-3 first:pl-6 last:pr-6";
 
@@ -41,7 +47,7 @@ export function Scorecards({ cards }: { cards: Scorecard[] }) {
             <thead>
               <tr className="bg-slate-50/60 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <th className={th}>Panelist</th>
-                <th className={`${th} text-right`}>This month</th>
+                <th className={`${th} text-right`}>{monthHeading}</th>
                 <th className={`${th} text-right`}>Last month</th>
                 <th className={`${th} text-right`}>{RECENT_DAYS} days</th>
                 <th className={`${th} text-right`}>Awaiting</th>

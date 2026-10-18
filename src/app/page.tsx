@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSignedInProfile, getSignedInUserId } from "@/lib/session";
 
 export default async function Home({
   searchParams,
@@ -19,21 +19,9 @@ export default async function Home({
     redirect(`/auth/callback?${oauthParams}`);
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  if (!(await getSignedInUserId())) redirect("/login");
 
-  if (!user) {
-    redirect("/login");
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
+  const profile = await getSignedInProfile();
   if (!profile) redirect("/login?error=no-account");
 
   redirect(profile.role === "vendor" ? "/vendor" : "/panelist");

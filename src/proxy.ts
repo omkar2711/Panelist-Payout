@@ -27,9 +27,9 @@ export async function proxy(request: NextRequest) {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Verifies the sign-in token locally and refreshes it when it has expired.
+  const { data } = await supabase.auth.getClaims();
+  const user = data?.claims ?? null;
 
   const isProtected = PROTECTED_PREFIXES.some((prefix) =>
     request.nextUrl.pathname.startsWith(prefix),

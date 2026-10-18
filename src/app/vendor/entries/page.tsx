@@ -4,6 +4,9 @@ import { approveEntry, rejectEntry } from "@/app/vendor/actions";
 import { Avatar } from "@/components/avatar";
 import { OutcomeLabel } from "@/components/outcome-label";
 import { PageHeader } from "@/components/page-header";
+import { PeriodPicker } from "@/components/period-picker";
+import { monthRange, parsePeriod } from "@/lib/period";
+import { periodMonths } from "@/lib/period-months";
 import { StatusBadge } from "@/components/status-badge";
 import { formatCurrency, formatDate, formatTime } from "@/lib/format";
 import type { InterviewEntry, Profile } from "@/lib/types";
@@ -15,10 +18,12 @@ const ROW_FIELDS = "*, panelists(profiles(full_name))";
 
 function PageLink({
   page,
+  period,
   disabled,
   children,
 }: {
   page: number;
+  period: string;
   disabled: boolean;
   children: string;
 }) {
@@ -29,7 +34,7 @@ function PageLink({
   }
   return (
     <Link
-      href={`/vendor/entries?page=${page}`}
+      href={`/vendor/entries?page=${page}${period === "all" ? "" : `&period=${period}`}`}
       scroll={false}
       className={`${className} hover:bg-slate-50`}
     >
@@ -43,32 +48,46 @@ export default async function EntriesPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const { page } = await searchParams;
-  const requestedPage = typeof page === "string" ? Number.parseInt(page, 10) || 1 : 1;
+  const params = await searchParams;
+  const requestedPage =
+    typeof params.page === "string" ? Number.parseInt(params.page, 10) || 1 : 1;
+  const period = parsePeriod(params.period);
+  const range = monthRange(period);
   const supabase = await createClient();
 
-  const [{ data: pendingRows }, { count: historyCount }] = await Promise.all([
+  // Both tables follow the month the interview took place in.
+  const scoped = <Q extends { gte: (c: string, v: string) => Q; lt: (c: string, v: string) => Q }>(
+    query: Q,
+  ) => (range ? query.gte("interview_date", range.from).lt("interview_date", range.to) : query);
+
+  const [{ data: allPending }, { count: historyCount }, months] = await Promise.all([
     supabase
       .from("interview_entries")
       .select(ROW_FIELDS)
       .eq("status", "submitted")
       .order("created_at", { ascending: false })
       .returns<Row[]>(),
-    supabase
-      .from("interview_entries")
-      .select("id", { count: "exact", head: true })
-      .neq("status", "submitted"),
+    scoped(
+      supabase
+        .from("interview_entries")
+        .select("id", { count: "exact", head: true })
+        .neq("status", "submitted"),
+    ),
+    periodMonths(supabase),
   ]);
+  const pendingRows = (allPending ?? []).filter(
+    (e) => !range || (e.interview_date >= range.from && e.interview_date < range.to),
+  );
+  const pendingElsewhere = (allPending ?? []).length - pendingRows.length;
 
   // Only one page of history is loaded at a time.
   const historyTotal = historyCount ?? 0;
   const pageCount = Math.max(1, Math.ceil(historyTotal / HISTORY_PAGE_SIZE));
   const currentPage = Math.min(Math.max(1, requestedPage), pageCount);
   const firstRow = (currentPage - 1) * HISTORY_PAGE_SIZE;
-  const { data: historyRows } = await supabase
-    .from("interview_entries")
-    .select(ROW_FIELDS)
-    .neq("status", "submitted")
+  const { data: historyRows } = await scoped(
+    supabase.from("interview_entries").select(ROW_FIELDS).neq("status", "submitted"),
+  )
     .order("created_at", { ascending: false })
     .order("id")
     .range(firstRow, firstRow + HISTORY_PAGE_SIZE - 1)
@@ -81,12 +100,25 @@ export default async function EntriesPage({
     <div>
       <PageHeader
         title="Approvals"
-        description="Review, edit or remove the interviews panelists have logged."
+        description={
+          period.isAll
+            ? "Review, edit or remove the interviews panelists have logged."
+            : `Interviews that took place in ${period.label}.`
+        }
+        actions={<PeriodPicker months={months} value={period.key} />}
       />
 
       <section className="rounded-2xl border border-slate-200/80 bg-white shadow-sm">
         <h2 className="border-b border-slate-100 px-6 py-4 text-sm font-semibold text-slate-900">
           Awaiting your approval ({pending.length})
+          {pendingElsewhere > 0 ? (
+            <Link
+              href="/vendor/entries"
+              className="ml-2 text-xs font-normal text-blue-600 hover:underline"
+            >
+              + {pendingElsewhere} from other months
+            </Link>
+          ) : null}
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -172,7 +204,7 @@ export default async function EntriesPage({
 
       <section className="mt-6 rounded-2xl border border-slate-200/80 bg-white shadow-sm">
         <h2 className="border-b border-slate-100 px-6 py-4 text-sm font-semibold text-slate-900">
-          History ({historyTotal})
+          History ({historyTotal}){period.isAll ? "" : ` · ${period.label}`}
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -252,13 +284,17 @@ export default async function EntriesPage({
               Showing {firstRow + 1}–{firstRow + rest.length} of {historyTotal}
             </p>
             <div className="flex items-center gap-2">
-              <PageLink page={currentPage - 1} disabled={currentPage <= 1}>
+              <PageLink page={currentPage - 1} period={period.key} disabled={currentPage <= 1}>
                 Previous
               </PageLink>
               <span className="px-1 tabular-nums text-slate-500">
                 Page {currentPage} of {pageCount}
               </span>
-              <PageLink page={currentPage + 1} disabled={currentPage >= pageCount}>
+              <PageLink
+                page={currentPage + 1}
+                period={period.key}
+                disabled={currentPage >= pageCount}
+              >
                 Next
               </PageLink>
             </div>

@@ -274,7 +274,10 @@ export type MonthFinance = {
   cost: number;
   paid: number;
   owed: number;
+  // billable minus panelist payouts, whether or not either has been settled
   margin: number;
+  // money actually received from NxtWave minus money actually paid to panelists
+  actualMargin: number;
 };
 
 // Money for approved interviews, grouped by the month the interview took place,
@@ -301,6 +304,7 @@ export function financeByMonth(entries: PerfEntry[], receivedTotal: number) {
         paid: 0,
         owed: 0,
         margin: 0,
+        actualMargin: 0,
       };
       byKey.set(key, month);
     }
@@ -324,6 +328,7 @@ export function financeByMonth(entries: PerfEntry[], receivedTotal: number) {
     unallocated -= month.received;
     month.receivable = month.billable - month.received;
     month.margin = month.billable - month.cost;
+    month.actualMargin = month.received - month.paid;
   }
 
   const sum = (pick: (month: MonthFinance) => number) =>
@@ -339,12 +344,47 @@ export function financeByMonth(entries: PerfEntry[], receivedTotal: number) {
       paid: sum((m) => m.paid),
       owed: sum((m) => m.owed),
       margin: sum((m) => m.margin),
+      actualMargin: sum((m) => m.actualMargin),
     },
     owedInterviews,
     unbillable,
     // Money received beyond everything billable so far.
     advance: unallocated,
   };
+}
+
+export type OutcomeCountRow = {
+  panelistId: string;
+  name: string;
+  total: number;
+  counts: Record<string, number>;
+};
+
+// Approved interviews per panelist, split by how each one turned out,
+// optionally limited to one month ("yyyy-mm"). Busiest panelist first.
+export function outcomeCountsByPanelist(
+  entries: (PerfEntry & { panelist_id: string })[],
+  names: Map<string, string>,
+  monthKey?: string,
+) {
+  const rows = new Map<string, OutcomeCountRow>();
+  for (const entry of entries) {
+    if (!isApproved(entry)) continue;
+    if (monthKey && !entry.interview_date.startsWith(monthKey)) continue;
+    let row = rows.get(entry.panelist_id);
+    if (!row) {
+      row = {
+        panelistId: entry.panelist_id,
+        name: names.get(entry.panelist_id) ?? "Unknown panelist",
+        total: 0,
+        counts: {},
+      };
+      rows.set(entry.panelist_id, row);
+    }
+    row.total += 1;
+    row.counts[entry.outcome] = (row.counts[entry.outcome] ?? 0) + 1;
+  }
+  return [...rows.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 }
 
 // Entries that have sat unreviewed for longer than `days`.

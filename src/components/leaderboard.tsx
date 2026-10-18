@@ -65,11 +65,18 @@ function Movement({ moved, isNew }: { moved: number | null; isNew: boolean }) {
 export function Leaderboard({
   rows,
   currentUserId,
+  fixedPeriod,
+  monthLabel,
 }: {
   rows: LeaderboardRow[];
   currentUserId?: string;
+  // set by a page-level month picker: no toggle, and the month is named
+  fixedPeriod?: "month" | "all";
+  monthLabel?: string;
 }) {
-  const [period, setPeriod] = useState<"month" | "all">("month");
+  const [chosen, setPeriod] = useState<"month" | "all">("month");
+  const period = fixedPeriod ?? chosen;
+  const monthName = monthLabel ?? "This month";
 
   if (rows.length === 0) {
     return (
@@ -96,15 +103,21 @@ export function Leaderboard({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
         <div>
           <h2 className="text-sm font-semibold text-slate-900">
-            {period === "month" ? "This month" : "All time"}
+            {period === "month" ? monthName : "All time"}
           </h2>
           <p className="mt-0.5 text-xs text-slate-400">
             {period === "month"
-              ? "Approved interviews this month. The board resets on the 1st."
+              ? monthLabel
+                ? `Approved interviews in ${monthLabel}, with movement since the month before.`
+                : "Approved interviews this month. The board resets on the 1st."
               : "Every approved interview since the start."}
           </p>
         </div>
-        <div role="group" aria-label="Period" className="inline-flex rounded-full bg-slate-100 p-1">
+        <div
+          role="group"
+          aria-label="Period"
+          className={`inline-flex rounded-full bg-slate-100 p-1 ${fixedPeriod ? "hidden" : ""}`}
+        >
           {(
             [
               { id: "month", label: "This month" },

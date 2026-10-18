@@ -1,13 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
+import { getSignedInUserId } from "@/lib/session";
 import { Leaderboard, StandingCard } from "@/components/leaderboard";
 import type { LeaderboardRow } from "@/lib/types";
 
 export default async function PanelistLeaderboardPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const { data } = await supabase.rpc("get_leaderboard");
+  const [userId, { data }] = await Promise.all([
+    getSignedInUserId(),
+    supabase.rpc("get_leaderboard"),
+  ]);
   const rows = (data ?? []) as LeaderboardRow[];
 
   return (
@@ -21,10 +22,10 @@ export default async function PanelistLeaderboardPage() {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <div className="xl:col-span-4">
-          <StandingCard rows={rows} currentUserId={user!.id} />
+          <StandingCard rows={rows} currentUserId={userId!} />
         </div>
         <div className="xl:col-span-8">
-          <Leaderboard rows={rows} currentUserId={user?.id} />
+          <Leaderboard rows={rows} currentUserId={userId ?? undefined} />
         </div>
       </div>
     </div>

@@ -15,9 +15,12 @@ import {
 import { Avatar } from "@/components/avatar";
 import { EarningsChart } from "@/components/earnings-chart";
 import { FeatureTile, StatTile, cardClass } from "@/components/stat-tile";
+import { OutcomeBreakdown } from "@/components/outcome-breakdown";
+import { PeriodPicker } from "@/components/period-picker";
 import { formatCurrency, formatDate, formatTime, monthAxisLabel } from "@/lib/format";
 import { outcomeOf } from "@/lib/interview-rates";
-import type { MonthFinance } from "@/lib/performance";
+import type { MonthFinance, OutcomeCountRow } from "@/lib/performance";
+import type { Period } from "@/lib/period";
 import type { PanelistBalance } from "@/lib/types";
 
 export type PendingItem = {
@@ -138,7 +141,7 @@ function Unpaid({ value, tone }: { value: number; tone: string }) {
 
 // Every month with approved interviews: what NxtWave owes for it and what the
 // panelists are owed for it.
-function MonthLedger({ ledger }: { ledger: Ledger }) {
+function MonthLedger({ ledger, selected }: { ledger: Ledger; selected: string }) {
   const money = "px-4 py-3 text-right tabular-nums";
   const head = "px-4 py-2 text-right font-medium";
   return (
@@ -147,7 +150,8 @@ function MonthLedger({ ledger }: { ledger: Ledger }) {
         <h2 className="text-sm font-semibold text-slate-900">Month by month</h2>
         <p className="mt-0.5 text-xs text-slate-400">
           Approved interviews, by the month they took place. Money received from NxtWave is
-          counted against the oldest unpaid month first.
+          counted against the oldest unpaid month first. Calculated margin is billable minus
+          payouts; actual margin is what NxtWave has paid you minus what you have paid out.
         </p>
       </div>
       {ledger.months.length === 0 ? (
@@ -156,7 +160,7 @@ function MonthLedger({ ledger }: { ledger: Ledger }) {
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] text-left text-sm">
+          <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="text-xs uppercase tracking-wide text-slate-500">
               <tr className="border-b border-slate-100 bg-slate-50/60">
                 <th colSpan={2} />
@@ -166,7 +170,9 @@ function MonthLedger({ ledger }: { ledger: Ledger }) {
                 <th colSpan={3} className="border-l border-slate-200 px-4 py-2 text-center font-semibold text-amber-700">
                   Panelists
                 </th>
-                <th className="border-l border-slate-200" />
+                <th colSpan={2} className="border-l border-slate-200 px-4 py-2 text-center font-semibold text-emerald-700">
+                  Margin
+                </th>
               </tr>
               <tr className="border-b border-slate-100 bg-slate-50/60">
                 <th className="px-6 py-2 font-medium">Month</th>
@@ -177,12 +183,16 @@ function MonthLedger({ ledger }: { ledger: Ledger }) {
                 <th className={`${head} border-l border-slate-200`}>Payouts</th>
                 <th className={head}>Paid</th>
                 <th className={head}>Unpaid</th>
-                <th className={`${head} border-l border-slate-200`}>Margin</th>
+                <th className={`${head} border-l border-slate-200`}>Calculated</th>
+                <th className={head}>Actual</th>
               </tr>
             </thead>
             <tbody>
               {ledger.months.map((month) => (
-                <tr key={month.key} className="border-t border-slate-100">
+                <tr
+                  key={month.key}
+                  className={`border-t border-slate-100 ${month.key === selected ? "bg-blue-50/60" : ""}`}
+                >
                   <td className="whitespace-nowrap px-6 py-3 font-medium text-slate-800">
                     {month.label}
                     {month.key === ledger.currentMonth ? (
@@ -213,6 +223,13 @@ function MonthLedger({ ledger }: { ledger: Ledger }) {
                   >
                     {formatCurrency(month.margin)}
                   </td>
+                  <td
+                    className={`${money} ${
+                      month.actualMargin < 0 ? "text-red-600" : "text-slate-800"
+                    }`}
+                  >
+                    {formatCurrency(month.actualMargin)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -232,6 +249,9 @@ function MonthLedger({ ledger }: { ledger: Ledger }) {
                 <td className={`${money} text-amber-700`}>{formatCurrency(ledger.totals.owed)}</td>
                 <td className={`${money} border-l border-slate-200`}>
                   {formatCurrency(ledger.totals.margin)}
+                </td>
+                <td className={`${money} ${ledger.totals.actualMargin < 0 ? "text-red-600" : ""}`}>
+                  {formatCurrency(ledger.totals.actualMargin)}
                 </td>
               </tr>
             </tfoot>
@@ -254,19 +274,32 @@ export function VendorDashboard({
   pending,
   pendingTotal,
   payments,
+  chartPayments,
   ledger,
+  focus,
+  outcomes,
   cash,
   attention,
+  period,
+  months,
 }: {
   firstName: string;
   balances: PanelistBalance[];
   pending: PendingItem[];
   pendingTotal: number;
   payments: PaymentItem[];
+  // every payment, for the six-month chart, whichever period is chosen
+  chartPayments: PaymentItem[];
   ledger: Ledger;
+  // the chosen month's row of the ledger, or the all-time totals
+  focus: Omit<MonthFinance, "key" | "label">;
+  outcomes: OutcomeCountRow[];
   cash: Cash;
   attention: Attention;
+  period: Period;
+  months: string[];
 }) {
+  const scope = period.isAll ? "" : ` · ${period.label}`;
   const totalDue = balances.reduce((sum, row) => sum + row.amount_due, 0);
   const totalPaid = balances.reduce((sum, row) => sum + row.amount_paid, 0);
   const owedCount = balances.filter((row) => row.amount_due > 0).length;
@@ -277,7 +310,7 @@ export function VendorDashboard({
     .sort((a, b) => b.amount_due - a.amount_due)
     .slice(0, 6);
   const maxDue = Math.max(1, ...dueByPanelist.map((row) => row.amount_due));
-  const paidByMonth = monthlyPaidSeries(payments);
+  const paidByMonth = monthlyPaidSeries(chartPayments);
   const recentPayments = payments.slice(0, 5);
   const sortedBalances = [...balances].sort(
     (a, b) => b.amount_due - a.amount_due || a.full_name.localeCompare(b.full_name),
@@ -285,19 +318,24 @@ export function VendorDashboard({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-          Welcome back, {firstName}
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Here&apos;s where interviews and payouts stand.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            Welcome back, {firstName}
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {period.isAll
+              ? "Here's where interviews and payouts stand, across all months."
+              : `Showing interviews that took place in ${period.label}.`}
+          </p>
+        </div>
+        <PeriodPicker months={months} value={period.key} />
       </div>
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
         <FeatureTile
           className="col-span-2"
-          label="Total owed to panelists"
+          label={`Total owed to panelists${scope}`}
           value={formatCurrency(totalDue)}
           hint={
             owedCount > 0
@@ -315,14 +353,18 @@ export function VendorDashboard({
         </FeatureTile>
 
         <StatTile
-          label="Paid out"
+          label={`Paid out${scope}`}
           value={formatCurrency(totalPaid)}
-          hint={`${plural(payments.length, "payment")} recorded`}
+          hint={
+            period.isAll
+              ? `${plural(payments.length, "payment")} recorded`
+              : `For ${period.label} interviews; ${plural(payments.length, "payment")} made that month`
+          }
           icon={Banknote}
           tone="bg-emerald-50 text-emerald-600"
         />
         <StatTile
-          label="Awaiting approval"
+          label={`Awaiting approval${scope}`}
           value={String(pendingTotal)}
           hint={pendingTotal > 0 ? "Waiting on your review" : "Nothing to review"}
           icon={Clock}
@@ -338,46 +380,65 @@ export function VendorDashboard({
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile
-          label="Unpaid by NxtWave"
-          value={formatCurrency(ledger.totals.receivable)}
-          hint={`${formatCurrency(ledger.totals.billable)} billable for ${plural(
-            ledger.totals.interviews,
+          label={`Unpaid by NxtWave${scope}`}
+          value={formatCurrency(focus.receivable)}
+          hint={`${formatCurrency(focus.billable)} billable for ${plural(
+            focus.interviews,
             "approved interview",
-          )}, ${formatCurrency(cash.received)} received${
-            ledger.unbillable ? `; ${ledger.unbillable} without a billable slot` : ""
+          )}, ${formatCurrency(focus.received)} received${
+            period.isAll && ledger.unbillable ? `; ${ledger.unbillable} without a billable slot` : ""
           }`}
           icon={FileText}
           tone="bg-blue-50 text-blue-600"
         />
         <StatTile
-          label="Unpaid to panelists"
-          value={formatCurrency(ledger.totals.owed)}
+          label={`Unpaid to panelists${scope}`}
+          value={formatCurrency(focus.owed)}
           hint={
-            ledger.owedInterviews > 0
-              ? `${plural(ledger.owedInterviews, "approved interview")} not yet paid out`
+            focus.owed > 0
+              ? `${formatCurrency(focus.paid)} of ${formatCurrency(focus.cost)} paid out so far`
               : "Every approved interview is paid"
           }
           icon={Wallet}
           tone="bg-amber-50 text-amber-600"
         />
         <StatTile
-          label="Margin, all time"
-          value={formatCurrency(ledger.totals.margin)}
+          label={`Calculated margin${scope}`}
+          value={formatCurrency(focus.margin)}
           hint={
-            ledger.totals.interviews === 0
+            focus.interviews === 0
               ? "Nothing approved yet"
-              : ledger.totals.margin < 0
+              : focus.margin < 0
                 ? "Payouts are higher than what can be billed"
-                : `${Math.round((ledger.totals.margin / ledger.totals.billable) * 100)}% of the billable amount`
+                : `Billable minus payouts: ${Math.round(
+                    (focus.margin / focus.billable) * 100,
+                  )}% of the billable amount`
           }
           icon={TrendingUp}
           tone="bg-emerald-50 text-emerald-600"
         />
+        <StatTile
+          label={`Actual margin${scope}`}
+          value={formatCurrency(period.isAll ? cash.received - cash.paidOut : focus.actualMargin)}
+          hint={
+            period.isAll
+              ? `${formatCurrency(cash.received)} received from NxtWave, ${formatCurrency(
+                  cash.paidOut,
+                )} paid to panelists`
+              : `${formatCurrency(focus.received)} received for ${period.label}, ${formatCurrency(
+                  focus.paid,
+                )} paid for its interviews`
+          }
+          icon={Banknote}
+          tone="bg-violet-50 text-violet-600"
+        />
       </div>
 
-      <MonthLedger ledger={ledger} />
+      <MonthLedger ledger={ledger} selected={period.key} />
+
+      <OutcomeBreakdown rows={outcomes} periodLabel={period.label} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <div className="space-y-6 xl:col-span-8">
@@ -385,7 +446,7 @@ export function VendorDashboard({
             <section className={`${cardClass} p-6`}>
               <h2 className="text-sm font-semibold text-slate-900">Amount due by panelist</h2>
               <p className="mb-4 mt-1 text-xs text-slate-400">
-                Approved, not yet paid{owedCount > 6 ? " · top 6" : ""}
+                Approved, not yet paid{scope}{owedCount > 6 ? " · top 6" : ""}
               </p>
               {dueByPanelist.length > 0 ? (
                 <ul className="flex min-h-64 flex-col gap-4 pt-1">
@@ -427,7 +488,12 @@ export function VendorDashboard({
 
           <section className={cardClass}>
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-              <h2 className="text-sm font-semibold text-slate-900">Panelists</h2>
+              <h2 className="text-sm font-semibold text-slate-900">
+                Panelists
+                {period.isAll ? null : (
+                  <span className="ml-2 text-xs font-normal text-slate-400">{period.label}</span>
+                )}
+              </h2>
               <CardLink href="/vendor/panelists">Manage panelists</CardLink>
             </div>
             {sortedBalances.length === 0 ? (
@@ -528,7 +594,10 @@ export function VendorDashboard({
 
           <section className={`${cardClass} p-6`}>
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-900">Cash position</h2>
+              <h2 className="text-sm font-semibold text-slate-900">
+                Cash position
+                <span className="ml-2 text-xs font-normal text-slate-400">All time</span>
+              </h2>
               <CardLink href="/vendor/payments#received">Record a receipt</CardLink>
             </div>
             <div className="mt-2 divide-y divide-slate-100">
@@ -557,6 +626,9 @@ export function VendorDashboard({
             <div className="flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 Awaiting approval
+                {period.isAll ? null : (
+                  <span className="text-xs font-normal text-slate-400">{period.label}</span>
+                )}
                 {pendingTotal > 0 ? (
                   <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-amber-800">
                     {pendingTotal}
@@ -604,13 +676,17 @@ export function VendorDashboard({
 
           <section className={`${cardClass} p-6`}>
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-900">Recent payments</h2>
+              <h2 className="text-sm font-semibold text-slate-900">
+                {period.isAll ? "Recent payments" : `Payments made in ${period.label}`}
+              </h2>
               <CardLink href="/vendor/payments">All payments</CardLink>
             </div>
             {recentPayments.length === 0 ? (
               <div className="mt-4 rounded-xl bg-slate-50 px-4 py-8 text-center">
                 <Receipt className="mx-auto h-6 w-6 text-slate-300" />
-                <p className="mt-2 text-sm text-slate-400">No payments recorded yet.</p>
+                <p className="mt-2 text-sm text-slate-400">
+                  {period.isAll ? "No payments recorded yet." : `No payments made in ${period.label}.`}
+                </p>
               </div>
             ) : (
               <ul className="mt-3 divide-y divide-slate-100">
