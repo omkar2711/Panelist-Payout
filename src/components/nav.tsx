@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar } from "./avatar";
+import { LinkPending } from "./link-pending";
 import { BrandLogo, BrandSymbol } from "./brand-logo";
 import { SignOutButton } from "./sign-out-button";
 
@@ -41,7 +42,10 @@ export function Nav({
                     : "text-slate-500 hover:text-slate-900"
                 }`}
               >
-                {link.label}
+                <span className="inline-flex items-center gap-1.5">
+                  {link.label}
+                  <LinkPending />
+                </span>
               </Link>
             );
           })}

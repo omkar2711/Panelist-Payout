@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getSignedInProfile, getSignedInUserId } from "@/lib/session";
 import { Nav } from "@/components/nav";
 import { ORG_NAME } from "@/lib/brand";
+import { DayChangeRefresh } from "@/components/day-change-refresh";
 
 export default async function PanelistLayout({
   children,
@@ -24,6 +25,7 @@ export default async function PanelistLayout({
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50/60 via-slate-50 to-slate-50">
+      <DayChangeRefresh />
       <Nav
         title={ORG_NAME}
         userLabel={profile.full_name}

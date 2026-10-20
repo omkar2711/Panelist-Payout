@@ -12,6 +12,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { Avatar } from "./avatar";
+import { LinkPending } from "./link-pending";
 import { BrandLogo } from "./brand-logo";
 import { SignOutButton } from "./sign-out-button";
 
@@ -68,6 +69,7 @@ export function Sidebar({
             >
               {link.label}
               {badge(link.icon)}
+              <LinkPending />
             </Link>
           ))}
         </nav>
@@ -102,6 +104,7 @@ export function Sidebar({
                     strokeWidth={2}
                   />
                   {link.label}
+                  <LinkPending />
                 </span>
                 {badge(link.icon)}
               </Link>

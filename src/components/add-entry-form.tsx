@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { addEntry } from "@/app/panelist/actions";
 import { INTERVIEW_DURATIONS, INTERVIEW_OUTCOMES } from "@/lib/interview-rates";
+import { todayInIndia } from "@/lib/performance";
 
 const initialState = { error: "" };
 const inputClass =
@@ -17,6 +18,8 @@ function Required() {
     </span>
   );
 }
+
+const latest = (a: string, b: string) => (a > b ? a : b);
 
 export function AddEntryForm({ today }: { today: string }) {
   const [state, formAction, pending] = useActionState(addEntry, initialState);
@@ -34,6 +37,11 @@ export function AddEntryForm({ today }: { today: string }) {
           type="date"
           required
           max={today}
+          // Re-check the limit when the picker opens, in case the page has been open since an
+          // earlier day. The later of the server's and the device's date wins; the server still
+          // refuses future dates on submit.
+          onFocus={(e) => (e.currentTarget.max = latest(today, todayInIndia()))}
+          onPointerDown={(e) => (e.currentTarget.max = latest(today, todayInIndia()))}
           className={inputClass}
         />
       </div>

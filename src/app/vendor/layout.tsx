@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getSignedInProfile, getSignedInUserId } from "@/lib/session";
 import { Sidebar } from "@/components/sidebar";
+import { DayChangeRefresh } from "@/components/day-change-refresh";
 
 export default async function VendorLayout({
   children,
@@ -24,6 +25,7 @@ export default async function VendorLayout({
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-b from-blue-50/60 via-slate-50 to-slate-50 lg:flex-row print:bg-none">
+      <DayChangeRefresh />
       <Sidebar
         userLabel={profile.full_name}
         pendingCount={pendingCount ?? 0}
