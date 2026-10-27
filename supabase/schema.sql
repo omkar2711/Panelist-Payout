@@ -87,6 +87,19 @@ create table payout_batches (
   created_at timestamptz not null default now()
 );
 
+-- The invoice actually raised to NxtWave for a month of interviews. Where one is
+-- recorded, it replaces the app's own estimate of that month's billable amount.
+create table client_invoices (
+  id uuid primary key default gen_random_uuid(),
+  month text not null unique check (month ~ '^\d{4}-(0[1-9]|1[0-2])$'),
+  invoice_no text,
+  amount numeric(12, 2) not null check (amount >= 0),
+  issued_on date,
+  notes text,
+  created_by uuid references profiles (id),
+  created_at timestamptz not null default now()
+);
+
 -- Locks the rate/amount at the moment an entry is approved, so later rate
 -- changes never retroactively change an already-approved entry. The rate is
 -- the panelist's 90-minute rate for 90-minute interviews, otherwise their
@@ -297,6 +310,7 @@ alter table interview_entries enable row level security;
 alter table payments enable row level security;
 alter table payment_entries enable row level security;
 alter table payout_batches enable row level security;
+alter table client_invoices enable row level security;
 
 create policy "read own profile or vendor reads all" on profiles
   for select using (id = auth.uid() or is_vendor());
@@ -366,3 +380,12 @@ create policy "vendor manages payout batches" on payout_batches
 -- Auto-create a profiles row whenever a new panelist auth user is created
 -- via the admin API (see src/lib/supabase/admin.ts + the "add panelist" flow).
 -- The vendor's own profile row is inserted manually once, per the README.
+
+create policy "vendor reads client invoices" on client_invoices
+  for select using (is_vendor());
+create policy "vendor adds client invoices" on client_invoices
+  for insert with check (is_vendor());
+create policy "vendor updates client invoices" on client_invoices
+  for update using (is_vendor()) with check (is_vendor());
+create policy "vendor deletes client invoices" on client_invoices
+  for delete using (is_vendor());

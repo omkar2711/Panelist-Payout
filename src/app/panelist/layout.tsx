@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getSignedInProfile, getSignedInUserId } from "@/lib/session";
@@ -5,7 +6,7 @@ import { Nav } from "@/components/nav";
 import { ORG_NAME } from "@/lib/brand";
 import { DayChangeRefresh } from "@/components/day-change-refresh";
 import { NoticeBanner } from "@/components/notice-banner";
-import { PANELIST_NOTICE } from "@/lib/notices";
+import { NOTICE_COOKIE, PANELIST_NOTICE } from "@/lib/notices";
 
 export default async function PanelistLayout({
   children,
@@ -25,6 +26,9 @@ export default async function PanelistLayout({
   if (profile.role !== "panelist") redirect("/vendor");
   if (!panelist?.active) redirect("/login?error=inactive");
 
+  const closedNotice = (await cookies()).get(NOTICE_COOKIE)?.value;
+  const notice = PANELIST_NOTICE && closedNotice !== PANELIST_NOTICE.id ? PANELIST_NOTICE : null;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50/60 via-slate-50 to-slate-50">
       <DayChangeRefresh />
@@ -37,7 +41,7 @@ export default async function PanelistLayout({
         ]}
       />
       <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-        {PANELIST_NOTICE ? <NoticeBanner {...PANELIST_NOTICE} /> : null}
+        {notice ? <NoticeBanner {...notice} /> : null}
         {children}
       </main>
     </div>

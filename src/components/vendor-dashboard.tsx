@@ -158,7 +158,9 @@ function MonthLedger({ ledger, selected }: { ledger: Ledger; selected: string })
       <div className="border-b border-slate-100 px-6 py-4">
         <h2 className="text-sm font-semibold text-slate-900">Month by month</h2>
         <p className="mt-0.5 text-xs text-slate-400">
-          Approved interviews, by the month they took place. Money received from NxtWave is
+          Approved interviews, by the month they took place. &ldquo;Billed&rdquo; is the invoice
+          you raised where one is recorded (Payments page), otherwise an estimate. Money received
+          from NxtWave is
           counted against the oldest unpaid month first. NxtWave keeps back 10% TDS and pays the
           rest; panelists are paid after a 10% deduction, and September&apos;s full payouts are
           recovered from their next payout. Calculated margin is what NxtWave pays minus what
@@ -188,7 +190,7 @@ function MonthLedger({ ledger, selected }: { ledger: Ledger; selected: string })
               <tr className="border-b border-slate-100 bg-slate-50/60">
                 <th className="px-6 py-2 font-medium">Month</th>
                 <th className={head}>Interviews</th>
-                <th className={`${head} border-l border-slate-200`}>Billable</th>
+                <th className={`${head} border-l border-slate-200`}>Billed</th>
                 <th className={head}>TDS 10%</th>
                 <th className={head}>Received</th>
                 <th className={head}>Unpaid</th>
@@ -215,8 +217,24 @@ function MonthLedger({ ledger, selected }: { ledger: Ledger; selected: string })
                     ) : null}
                   </td>
                   <td className={`${money} text-slate-600`}>{month.interviews}</td>
-                  <td className={`${money} border-l border-slate-100 text-slate-600`}>
+                  <td
+                    className={`${money} border-l border-slate-100 text-slate-600`}
+                    title={
+                      month.invoiced && month.estimated !== month.billable
+                        ? `Invoice raised. The app estimates ${formatCurrency(month.estimated)} from approved interviews.`
+                        : month.invoiced
+                          ? "Invoice raised"
+                          : "Estimated from approved interviews (no invoice recorded yet)"
+                    }
+                  >
                     {formatCurrency(month.billable)}
+                    <span
+                      className={`ml-1.5 rounded px-1 py-0.5 text-[10px] font-semibold uppercase ${
+                        month.invoiced ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400"
+                      }`}
+                    >
+                      {month.invoiced ? "Invoiced" : "Est."}
+                    </span>
                   </td>
                   <td className={`${money} text-slate-400`}>−{formatCurrency(month.tds)}</td>
                   <td className={`${money} text-slate-600`}>{formatCurrency(month.received)}</td>

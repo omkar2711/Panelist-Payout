@@ -53,6 +53,7 @@ export default async function VendorDashboardPage({
     { data: paymentRows },
     { data: receiptRows },
     { data: links },
+    { data: invoiceRows },
     entries,
   ] = await Promise.all([
     supabase.from("panelist_balances").select("*").returns<PanelistBalance[]>(),
@@ -79,6 +80,10 @@ export default async function VendorDashboardPage({
       .from("payment_entries")
       .select("payment_id, entry_id")
       .returns<{ payment_id: string; entry_id: string }[]>(),
+    supabase
+      .from("client_invoices")
+      .select("month, amount")
+      .returns<{ month: string; amount: number }[]>(),
     fetchAllEntries(supabase),
   ]);
 
@@ -93,7 +98,8 @@ export default async function VendorDashboardPage({
   );
   // What each paid interview actually cost after the 10% payout deduction.
   const cashPaid = cashPaidByEntry(entries, paymentRows ?? [], links ?? []);
-  const ledger = financeByMonth(entries, received, cashPaid);
+  const invoiced = new Map((invoiceRows ?? []).map((row) => [row.month, Number(row.amount)]));
+  const ledger = financeByMonth(entries, received, cashPaid, invoiced);
   const netOf = (amount: number | null) =>
     round2((amount ?? 0) * (1 - PAYOUT_DEDUCTION_RATE));
   // Payouts run monthly, so anything approved for an earlier month is overdue.
@@ -139,6 +145,8 @@ export default async function VendorDashboardPage({
   const emptyMonth = {
     interviews: 0,
     billable: 0,
+    estimated: 0,
+    invoiced: false,
     tds: 0,
     netDue: 0,
     received: 0,

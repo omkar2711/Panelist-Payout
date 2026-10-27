@@ -267,8 +267,12 @@ export type MonthFinance = {
   key: string;
   label: string;
   interviews: number;
-  // NxtWave side: the bill, the 10% TDS NxtWave keeps back, what it should pay
+  // NxtWave side: the bill, the 10% TDS NxtWave keeps back, what it should pay.
+  // `billable` is the invoice actually raised when one is recorded, otherwise
+  // the app's estimate from the approved interviews (`estimated`).
   billable: number;
+  estimated: number;
+  invoiced: boolean;
   tds: number;
   netDue: number;
   received: number;
@@ -293,13 +297,12 @@ export function financeByMonth(
   entries: (PerfEntry & { id: string })[],
   receivedTotal: number,
   cashPaid: Map<string, number>,
+  invoices: Map<string, number> = new Map(),
 ) {
   const byKey = new Map<string, MonthFinance>();
   let owedInterviews = 0;
   let unbillable = 0;
-  for (const entry of entries) {
-    if (!isApproved(entry)) continue;
-    const key = entry.interview_date.slice(0, 7);
+  const monthFor = (key: string) => {
     let month = byKey.get(key);
     if (!month) {
       month = {
@@ -307,6 +310,8 @@ export function financeByMonth(
         label: monthLabel(key),
         interviews: 0,
         billable: 0,
+        estimated: 0,
+        invoiced: false,
         tds: 0,
         netDue: 0,
         received: 0,
@@ -321,6 +326,12 @@ export function financeByMonth(
       };
       byKey.set(key, month);
     }
+    return month;
+  };
+  for (const key of invoices.keys()) monthFor(key);
+  for (const entry of entries) {
+    if (!isApproved(entry)) continue;
+    const month = monthFor(entry.interview_date.slice(0, 7));
     const amount = entry.amount ?? 0;
     month.interviews += 1;
     month.cost += amount;
@@ -329,7 +340,12 @@ export function financeByMonth(
     else owedInterviews += 1;
     const claim = claimFor(entry);
     if (claim === null) unbillable += 1;
-    else month.billable += claim;
+    else month.estimated += claim;
+  }
+  for (const month of byKey.values()) {
+    const invoice = invoices.get(month.key);
+    month.invoiced = invoice !== undefined;
+    month.billable = invoice ?? month.estimated;
   }
 
   const oldestFirst = [...byKey.values()].sort((a, b) => a.key.localeCompare(b.key));
@@ -354,6 +370,8 @@ export function financeByMonth(
     totals: {
       interviews: sum((m) => m.interviews),
       billable: sum((m) => m.billable),
+      estimated: sum((m) => m.estimated),
+      invoiced: oldestFirst.every((m) => m.invoiced),
       tds: sum((m) => m.tds),
       netDue: sum((m) => m.netDue),
       received: sum((m) => m.received),

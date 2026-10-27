@@ -241,6 +241,49 @@ export async function recordReceipt(_prevState: unknown, formData: FormData) {
   return { error: "", saved: amount };
 }
 
+// The invoice actually raised to NxtWave for a month. Saving a month again
+// replaces that month's invoice.
+export async function saveClientInvoice(_prevState: unknown, formData: FormData) {
+  const { supabase, user } = await assertVendor();
+
+  const month = String(formData.get("month") ?? "");
+  const amount = Number(formData.get("amount"));
+  const issued_on = String(formData.get("issued_on") ?? "") || null;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    return { error: "Choose the month the invoice is for.", saved: "" };
+  }
+  if (!Number.isFinite(amount) || amount < 0) {
+    return { error: "Enter the invoice total, before NxtWave's TDS.", saved: "" };
+  }
+  if (issued_on && !/^\d{4}-\d{2}-\d{2}$/.test(issued_on)) {
+    return { error: "Choose a valid invoice date.", saved: "" };
+  }
+
+  const { error } = await supabase.from("client_invoices").upsert(
+    {
+      month,
+      amount,
+      issued_on,
+      invoice_no: String(formData.get("invoice_no") ?? "").trim() || null,
+      notes: String(formData.get("notes") ?? "").trim() || null,
+      created_by: user.id,
+    },
+    { onConflict: "month" },
+  );
+  if (error) return { error: error.message, saved: "" };
+
+  revalidatePath("/vendor/payments");
+  revalidatePath("/vendor");
+  return { error: "", saved: month };
+}
+
+export async function removeClientInvoice(id: string) {
+  const { supabase } = await assertVendor();
+  await supabase.from("client_invoices").delete().eq("id", id);
+  revalidatePath("/vendor/payments");
+  revalidatePath("/vendor");
+}
+
 const EDITABLE_STATUSES = ["submitted", "approved", "rejected"];
 
 function revalidateEntryViews() {

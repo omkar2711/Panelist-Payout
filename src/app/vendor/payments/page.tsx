@@ -4,8 +4,11 @@ import { PageHeader } from "@/components/page-header";
 import { PeriodPicker } from "@/components/period-picker";
 import { recoverableFor } from "@/lib/deductions";
 import { inPeriod, parsePeriod } from "@/lib/period";
+import { monthLabel } from "@/lib/performance";
 import { periodMonths } from "@/lib/period-months";
+import { ClientInvoiceForm } from "@/components/client-invoice-form";
 import { ReceiptForm } from "@/components/receipt-form";
+import { removeClientInvoice } from "@/app/vendor/actions";
 import { RecordPaymentForm } from "@/components/record-payment-form";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { todayInIndia } from "@/lib/performance";
@@ -34,6 +37,7 @@ export default async function PaymentsPage({
     { data: approvedEntries },
     { data: allPayments },
     { data: allReceipts },
+    { data: allInvoices },
     months,
   ] = await Promise.all([
       supabase
@@ -56,6 +60,11 @@ export default async function PaymentsPage({
         .select("id, amount, received_on, period_label, notes")
         .order("received_on", { ascending: false })
         .returns<Receipt[]>(),
+      supabase
+        .from("client_invoices")
+        .select("id, month, invoice_no, amount, issued_on")
+        .order("month", { ascending: false })
+        .returns<{ id: string; month: string; invoice_no: string | null; amount: number; issued_on: string | null }[]>(),
       periodMonths(supabase),
     ]);
 
@@ -64,6 +73,11 @@ export default async function PaymentsPage({
   const payments = (allPayments ?? []).filter((p) => inPeriod(period, p.paid_on));
   const receipts = (allReceipts ?? []).filter((r) => inPeriod(period, r.received_on));
   const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
+  const invoices = (allInvoices ?? []).filter((i) => period.isAll || i.month === period.key);
+  const lastMonth = (() => {
+    const [y, m] = todayInIndia().slice(0, 7).split("-").map(Number);
+    return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+  })();
   const deductedTotal = payments.reduce((sum, p) => sum + p.tds_amount + p.recovery_amount, 0);
   // What is still to be recovered from each panelist's September full payout.
   const recoverable = Object.fromEntries(
@@ -189,6 +203,86 @@ export default async function PaymentsPage({
                       </td>
                       <td className="px-6 py-3 text-right font-medium tabular-nums">
                         {formatCurrency(p.amount)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <h2
+        id="invoices"
+        className="mb-1 mt-10 scroll-mt-24 text-lg font-semibold tracking-tight text-slate-900"
+      >
+        Invoices sent to NxtWave
+      </h2>
+      <p className="mb-4 text-sm text-slate-500">
+        Record the invoice you raise each month, so the dashboard works from what you actually billed.
+      </p>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <section className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm xl:col-span-5 xl:self-start">
+          <h3 className="mb-4 text-sm font-semibold text-slate-900">Record an invoice</h3>
+          <ClientInvoiceForm defaultMonth={period.isAll ? lastMonth : period.key} today={todayInIndia()} />
+        </section>
+        <section className="rounded-2xl border border-slate-200/80 bg-white shadow-sm xl:col-span-7 xl:self-start">
+          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+            <h3 className="text-sm font-semibold text-slate-900">
+              Invoices{period.isAll ? "" : ` · ${period.label}`}
+            </h3>
+            <p className="text-sm text-slate-500">
+              Total invoiced:{" "}
+              <span className="font-semibold tabular-nums text-slate-900">
+                {formatCurrency(invoices.reduce((sum, i) => sum + Number(i.amount), 0))}
+              </span>
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50/60 text-xs font-medium uppercase tracking-wide text-slate-500">
+                  <th className="px-6 py-2.5">For</th>
+                  <th className="px-6 py-2.5">Invoice</th>
+                  <th className="px-6 py-2.5 text-right">Total</th>
+                  <th className="px-6 py-2.5 text-right">Expected after 10% TDS</th>
+                  <th className="px-6 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-6 text-center text-slate-400">
+                      No invoices recorded{period.isAll ? " yet" : ` for ${period.label}`}.
+                    </td>
+                  </tr>
+                ) : (
+                  invoices.map((invoice) => (
+                    <tr key={invoice.id} className="border-t border-slate-100 hover:bg-slate-50/60">
+                      <td className="whitespace-nowrap px-6 py-3 font-medium text-slate-800">
+                        {monthLabel(invoice.month)}
+                      </td>
+                      <td className="px-6 py-3 text-slate-500">
+                        {[invoice.invoice_no, invoice.issued_on ? formatDate(invoice.issued_on) : null]
+                          .filter(Boolean)
+                          .join(" · ") || "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-3 text-right font-medium tabular-nums">
+                        {formatCurrency(Number(invoice.amount))}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-3 text-right tabular-nums text-slate-500">
+                        {formatCurrency(Math.round(Number(invoice.amount) * 0.9 * 100) / 100)}
+                      </td>
+                      <td className="px-6 py-3 text-right">
+                        <form action={removeClientInvoice.bind(null, invoice.id)}>
+                          <button
+                            type="submit"
+                            className="rounded-md px-2 py-1 text-xs font-medium text-slate-400 hover:bg-red-50 hover:text-red-600"
+                          >
+                            Remove
+                          </button>
+                        </form>
                       </td>
                     </tr>
                   ))
