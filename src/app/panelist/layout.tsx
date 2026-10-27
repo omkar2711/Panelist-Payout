@@ -4,6 +4,8 @@ import { getSignedInProfile, getSignedInUserId } from "@/lib/session";
 import { Nav } from "@/components/nav";
 import { ORG_NAME } from "@/lib/brand";
 import { DayChangeRefresh } from "@/components/day-change-refresh";
+import { NoticeBanner } from "@/components/notice-banner";
+import { PANELIST_NOTICE } from "@/lib/notices";
 
 export default async function PanelistLayout({
   children,
@@ -34,7 +36,10 @@ export default async function PanelistLayout({
           { href: "/panelist/leaderboard", label: "Leaderboard" },
         ]}
       />
-      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">{children}</main>
+      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+        {PANELIST_NOTICE ? <NoticeBanner {...PANELIST_NOTICE} /> : null}
+        {children}
+      </main>
     </div>
   );
 }

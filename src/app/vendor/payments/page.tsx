@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Avatar } from "@/components/avatar";
 import { PageHeader } from "@/components/page-header";
 import { PeriodPicker } from "@/components/period-picker";
+import { recoverableFor } from "@/lib/deductions";
 import { inPeriod, parsePeriod } from "@/lib/period";
 import { periodMonths } from "@/lib/period-months";
 import { ReceiptForm } from "@/components/receipt-form";
@@ -63,6 +64,14 @@ export default async function PaymentsPage({
   const payments = (allPayments ?? []).filter((p) => inPeriod(period, p.paid_on));
   const receipts = (allReceipts ?? []).filter((r) => inPeriod(period, r.received_on));
   const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
+  const deductedTotal = payments.reduce((sum, p) => sum + p.tds_amount + p.recovery_amount, 0);
+  // What is still to be recovered from each panelist's September full payout.
+  const recoverable = Object.fromEntries(
+    (panelists ?? []).map((p) => [
+      p.id,
+      recoverableFor((allPayments ?? []).filter((pay) => pay.panelist_id === p.id)),
+    ]),
+  );
 
   // Active panelists, plus inactive ones who are still owed money.
   const owedIds = new Set((approvedEntries ?? []).map((e) => e.panelist_id));
@@ -102,7 +111,11 @@ export default async function PaymentsPage({
               Add an active panelist first.
             </p>
           ) : (
-            <RecordPaymentForm panelists={panelistOptions} approvedEntries={entries} />
+            <RecordPaymentForm
+              panelists={panelistOptions}
+              approvedEntries={entries}
+              recoverable={recoverable}
+            />
           )}
         </section>
 
@@ -112,10 +125,13 @@ export default async function PaymentsPage({
               Payment history{period.isAll ? "" : ` · ${period.label}`}
             </h2>
             <p className="text-sm text-slate-500">
-              Total paid:{" "}
+              Paid{" "}
               <span className="font-semibold tabular-nums text-slate-900">
                 {formatCurrency(paidTotal)}
               </span>
+              {deductedTotal > 0 ? (
+                <span className="text-slate-400"> · {formatCurrency(deductedTotal)} deducted</span>
+              ) : null}
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -125,13 +141,15 @@ export default async function PaymentsPage({
                   <th className="px-6 py-2.5">Panelist</th>
                   <th className="px-6 py-2.5">Paid on</th>
                   <th className="px-6 py-2.5">Mode</th>
-                  <th className="px-6 py-2.5">Amount</th>
+                  <th className="px-6 py-2.5 text-right">Interviews</th>
+                  <th className="px-6 py-2.5 text-right">Deducted</th>
+                  <th className="px-6 py-2.5 text-right">Paid</th>
                 </tr>
               </thead>
               <tbody>
                 {payments.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-6 text-center text-slate-400">
+                    <td colSpan={6} className="px-6 py-6 text-center text-slate-400">
                       {period.isAll ? "No payments recorded yet." : `No payments made in ${period.label}.`}
                     </td>
                   </tr>
@@ -151,7 +169,25 @@ export default async function PaymentsPage({
                       </td>
                       <td className="px-6 py-3">{formatDate(p.paid_on)}</td>
                       <td className="px-6 py-3 text-slate-500">{p.mode ?? "—"}</td>
-                      <td className="px-6 py-3 font-medium tabular-nums">
+                      <td className="px-6 py-3 text-right tabular-nums text-slate-500">
+                        {formatCurrency(p.amount + p.tds_amount + p.recovery_amount)}
+                      </td>
+                      <td className="px-6 py-3 text-right tabular-nums text-slate-500">
+                        {p.tds_amount + p.recovery_amount > 0 ? (
+                          <span
+                            title={`10% deduction ${formatCurrency(p.tds_amount)}${
+                              p.recovery_amount ? ` + September adjustment ${formatCurrency(p.recovery_amount)}` : ""
+                            }`}
+                          >
+                            −{formatCurrency(p.tds_amount + p.recovery_amount)}
+                          </span>
+                        ) : p.paid_in_full ? (
+                          <span className="text-xs text-slate-400">Paid in full</span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-6 py-3 text-right font-medium tabular-nums">
                         {formatCurrency(p.amount)}
                       </td>
                     </tr>

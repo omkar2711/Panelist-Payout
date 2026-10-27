@@ -93,8 +93,14 @@ export type Ledger = {
 export type Cash = {
   received: number;
   paidOut: number;
+  // after the 10% payout deduction and the September adjustment
   owed: number;
-  billableAllTime: number;
+  // what NxtWave owes in total after its 10% TDS
+  netDueAllTime: number;
+  // TDS NxtWave has kept back from what it paid (claimable in your tax return)
+  nxtwaveTds: number;
+  // 10% deductions and September adjustments taken from panelist payouts
+  deductedFromPanelists: number;
 };
 
 export type Attention = {
@@ -132,11 +138,14 @@ function CashRow({
 }
 
 function Unpaid({ value, tone }: { value: number; tone: string }) {
-  return value > 0 ? (
-    <span className={`font-semibold ${tone}`}>{formatCurrency(value)}</span>
-  ) : (
-    <span className="text-slate-400">Settled</span>
-  );
+  if (value > 0) return <span className={`font-semibold ${tone}`}>{formatCurrency(value)}</span>;
+  if (value < 0)
+    return (
+      <span className="font-medium text-violet-700" title="Paid in full before the 10% deduction started">
+        Recover {formatCurrency(-value)}
+      </span>
+    );
+  return <span className="text-slate-400">Settled</span>;
 }
 
 // Every month with approved interviews: what NxtWave owes for it and what the
@@ -150,8 +159,10 @@ function MonthLedger({ ledger, selected }: { ledger: Ledger; selected: string })
         <h2 className="text-sm font-semibold text-slate-900">Month by month</h2>
         <p className="mt-0.5 text-xs text-slate-400">
           Approved interviews, by the month they took place. Money received from NxtWave is
-          counted against the oldest unpaid month first. Calculated margin is billable minus
-          payouts; actual margin is what NxtWave has paid you minus what you have paid out.
+          counted against the oldest unpaid month first. NxtWave keeps back 10% TDS and pays the
+          rest; panelists are paid after a 10% deduction, and September&apos;s full payouts are
+          recovered from their next payout. Calculated margin is what NxtWave pays minus what
+          panelists are paid; actual margin is cash received minus cash paid out.
         </p>
       </div>
       {ledger.months.length === 0 ? (
@@ -160,15 +171,15 @@ function MonthLedger({ ledger, selected }: { ledger: Ledger; selected: string })
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-left text-sm">
+          <table className="w-full min-w-[1180px] text-left text-sm">
             <thead className="text-xs uppercase tracking-wide text-slate-500">
               <tr className="border-b border-slate-100 bg-slate-50/60">
                 <th colSpan={2} />
-                <th colSpan={3} className="border-l border-slate-200 px-4 py-2 text-center font-semibold text-blue-700">
-                  NxtWave
+                <th colSpan={4} className="border-l border-slate-200 px-4 py-2 text-center font-semibold text-blue-700">
+                  NxtWave (pays after 10% TDS)
                 </th>
-                <th colSpan={3} className="border-l border-slate-200 px-4 py-2 text-center font-semibold text-amber-700">
-                  Panelists
+                <th colSpan={4} className="border-l border-slate-200 px-4 py-2 text-center font-semibold text-amber-700">
+                  Panelists (paid after 10% deduction)
                 </th>
                 <th colSpan={2} className="border-l border-slate-200 px-4 py-2 text-center font-semibold text-emerald-700">
                   Margin
@@ -178,9 +189,11 @@ function MonthLedger({ ledger, selected }: { ledger: Ledger; selected: string })
                 <th className="px-6 py-2 font-medium">Month</th>
                 <th className={head}>Interviews</th>
                 <th className={`${head} border-l border-slate-200`}>Billable</th>
+                <th className={head}>TDS 10%</th>
                 <th className={head}>Received</th>
                 <th className={head}>Unpaid</th>
                 <th className={`${head} border-l border-slate-200`}>Payouts</th>
+                <th className={head}>Deducted 10%</th>
                 <th className={head}>Paid</th>
                 <th className={head}>Unpaid</th>
                 <th className={`${head} border-l border-slate-200`}>Calculated</th>
@@ -205,6 +218,7 @@ function MonthLedger({ ledger, selected }: { ledger: Ledger; selected: string })
                   <td className={`${money} border-l border-slate-100 text-slate-600`}>
                     {formatCurrency(month.billable)}
                   </td>
+                  <td className={`${money} text-slate-400`}>−{formatCurrency(month.tds)}</td>
                   <td className={`${money} text-slate-600`}>{formatCurrency(month.received)}</td>
                   <td className={money}>
                     <Unpaid value={month.receivable} tone="text-blue-700" />
@@ -212,6 +226,7 @@ function MonthLedger({ ledger, selected }: { ledger: Ledger; selected: string })
                   <td className={`${money} border-l border-slate-100 text-slate-600`}>
                     {formatCurrency(month.cost)}
                   </td>
+                  <td className={`${money} text-slate-400`}>−{formatCurrency(month.deduction)}</td>
                   <td className={`${money} text-slate-600`}>{formatCurrency(month.paid)}</td>
                   <td className={money}>
                     <Unpaid value={month.owed} tone="text-amber-700" />
@@ -240,13 +255,19 @@ function MonthLedger({ ledger, selected }: { ledger: Ledger; selected: string })
                 <td className={`${money} border-l border-slate-200`}>
                   {formatCurrency(ledger.totals.billable)}
                 </td>
+                <td className={`${money} text-slate-500`}>−{formatCurrency(ledger.totals.tds)}</td>
                 <td className={money}>{formatCurrency(ledger.totals.received)}</td>
-                <td className={`${money} text-blue-700`}>{formatCurrency(ledger.totals.receivable)}</td>
+                <td className={money}>
+                  <Unpaid value={ledger.totals.receivable} tone="text-blue-700" />
+                </td>
                 <td className={`${money} border-l border-slate-200`}>
                   {formatCurrency(ledger.totals.cost)}
                 </td>
+                <td className={`${money} text-slate-500`}>−{formatCurrency(ledger.totals.deduction)}</td>
                 <td className={money}>{formatCurrency(ledger.totals.paid)}</td>
-                <td className={`${money} text-amber-700`}>{formatCurrency(ledger.totals.owed)}</td>
+                <td className={money}>
+                  <Unpaid value={ledger.totals.owed} tone="text-amber-700" />
+                </td>
                 <td className={`${money} border-l border-slate-200`}>
                   {formatCurrency(ledger.totals.margin)}
                 </td>
@@ -260,8 +281,8 @@ function MonthLedger({ ledger, selected }: { ledger: Ledger; selected: string })
       )}
       {ledger.advance > 0 ? (
         <p className="border-t border-slate-100 px-6 py-3 text-xs text-slate-500">
-          {formatCurrency(ledger.advance)} received from NxtWave is more than everything billable so
-          far, and will count against future months.
+          {formatCurrency(ledger.advance)} received from NxtWave is more than everything due so far,
+          and will count against future months.
         </p>
       ) : null}
     </section>
@@ -384,10 +405,10 @@ export function VendorDashboard({
         <StatTile
           label={`Unpaid by NxtWave${scope}`}
           value={formatCurrency(focus.receivable)}
-          hint={`${formatCurrency(focus.billable)} billable for ${plural(
+          hint={`${formatCurrency(focus.billable)} billed for ${plural(
             focus.interviews,
             "approved interview",
-          )}, ${formatCurrency(focus.received)} received${
+          )}, less 10% TDS = ${formatCurrency(focus.netDue)} due; ${formatCurrency(focus.received)} received${
             period.isAll && ledger.unbillable ? `; ${ledger.unbillable} without a billable slot` : ""
           }`}
           icon={FileText}
@@ -397,8 +418,10 @@ export function VendorDashboard({
           label={`Unpaid to panelists${scope}`}
           value={formatCurrency(focus.owed)}
           hint={
-            focus.owed > 0
-              ? `${formatCurrency(focus.paid)} of ${formatCurrency(focus.cost)} paid out so far`
+            focus.owed !== 0
+              ? `After the 10% deduction${period.isAll ? " and September adjustment" : ""}; ${formatCurrency(
+                  focus.paid,
+                )} paid so far`
               : "Every approved interview is paid"
           }
           icon={Wallet}
@@ -412,7 +435,7 @@ export function VendorDashboard({
               ? "Nothing approved yet"
               : focus.margin < 0
                 ? "Payouts are higher than what can be billed"
-                : `Billable minus payouts: ${Math.round(
+                : `What NxtWave pays minus what panelists get, both after 10%: ${Math.round(
                     (focus.margin / focus.billable) * 100,
                   )}% of the billable amount`
           }
@@ -607,7 +630,7 @@ export function VendorDashboard({
               <CashRow
                 label="Owed to panelists"
                 value={cash.owed}
-                hint="Approved, not yet paid"
+                hint="After the 10% deduction and September adjustment"
               />
               <CashRow
                 label="Left after paying everyone"
@@ -616,8 +639,18 @@ export function VendorDashboard({
               />
               <CashRow
                 label="Still to come from NxtWave"
-                value={cash.billableAllTime - cash.received}
-                hint="Billable for approved interviews, less what's been received"
+                value={cash.netDueAllTime - cash.received}
+                hint="Billable for approved interviews after 10% TDS, less what's been received"
+              />
+              <CashRow
+                label="TDS kept back by NxtWave"
+                value={cash.nxtwaveTds}
+                hint="10% of what NxtWave has paid for; claim it in your tax return"
+              />
+              <CashRow
+                label="Deducted from panelist payouts"
+                value={cash.deductedFromPanelists}
+                hint="10% deductions and September adjustments so far"
               />
             </div>
           </section>

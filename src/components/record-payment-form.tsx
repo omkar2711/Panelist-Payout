@@ -2,6 +2,7 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { recordPayment } from "@/app/vendor/actions";
+import { payoutBreakdown } from "@/lib/deductions";
 import { formatCurrency, formatDate } from "@/lib/format";
 
 const initialState = { error: "" };
@@ -12,8 +13,11 @@ const labelClass = "text-sm font-medium text-slate-700";
 export function RecordPaymentForm({
   panelists,
   approvedEntries,
+  recoverable,
 }: {
   panelists: { id: string; full_name: string }[];
+  // per panelist: what is still to be recovered from September's full payouts
+  recoverable: Record<string, number>;
   approvedEntries: {
     id: string;
     panelist_id: string;
@@ -30,9 +34,10 @@ export function RecordPaymentForm({
     [approvedEntries, panelistId],
   );
 
-  const suggestedAmount = entriesForPanelist
+  const gross = entriesForPanelist
     .filter((e) => selected.has(e.id))
     .reduce((sum, e) => sum + e.amount, 0);
+  const payout = payoutBreakdown(gross, recoverable[panelistId] ?? 0);
 
   function toggleEntry(id: string) {
     setSelected((prev) => {
@@ -101,17 +106,37 @@ export function RecordPaymentForm({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <label htmlFor="amount" className={labelClass}>
-            Amount (₹)
+            Amount to pay (₹)
           </label>
           <input
             id="amount"
-            name="amount"
             type="number"
             readOnly
-            value={suggestedAmount}
+            value={payout.net}
             className={`${inputClass} bg-slate-50 tabular-nums`}
           />
-          <p className="text-xs text-slate-400">Total of the ticked interviews.</p>
+          <dl className="space-y-0.5 text-xs text-slate-500">
+            <div className="flex justify-between gap-3">
+              <dt>Ticked interviews</dt>
+              <dd className="tabular-nums">{formatCurrency(payout.gross)}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt>10% deduction</dt>
+              <dd className="tabular-nums">−{formatCurrency(payout.tds)}</dd>
+            </div>
+            {(recoverable[panelistId] ?? 0) > 0 ? (
+              <div className="flex justify-between gap-3">
+                <dt>
+                  September adjustment
+                  <span className="text-slate-400">
+                    {" "}
+                    ({formatCurrency(recoverable[panelistId])} to recover)
+                  </span>
+                </dt>
+                <dd className="tabular-nums">−{formatCurrency(payout.recovery)}</dd>
+              </div>
+            ) : null}
+          </dl>
         </div>
 
         <div className="space-y-1">

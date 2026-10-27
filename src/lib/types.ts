@@ -41,7 +41,12 @@ export interface InterviewEntry {
 export interface Payment {
   id: string;
   panelist_id: string;
+  // cash actually paid, after the 10% deduction and any September adjustment
   amount: number;
+  tds_amount: number;
+  recovery_amount: number;
+  // paid before the 10% deduction started, so its 10% is recovered later
+  paid_in_full: boolean;
   paid_on: string;
   mode: string | null;
   reference: string | null;

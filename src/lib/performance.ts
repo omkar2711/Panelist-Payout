@@ -1,3 +1,4 @@
+import { NXTWAVE_TDS_RATE, PAYOUT_DEDUCTION_RATE, round2 } from "@/lib/deductions";
 import { INTERVIEW_DURATIONS, outcomeOf } from "@/lib/interview-rates";
 import type { EntryStatus } from "@/lib/types";
 
@@ -266,25 +267,33 @@ export type MonthFinance = {
   key: string;
   label: string;
   interviews: number;
-  // NxtWave side
+  // NxtWave side: the bill, the 10% TDS NxtWave keeps back, what it should pay
   billable: number;
+  tds: number;
+  netDue: number;
   received: number;
   receivable: number;
-  // panelist side
+  // panelist side: payouts before and after the 10% deduction
   cost: number;
+  deduction: number;
+  netCost: number;
   paid: number;
   owed: number;
-  // billable minus panelist payouts, whether or not either has been settled
+  // what we keep once both sides are settled
   margin: number;
   // money actually received from NxtWave minus money actually paid to panelists
   actualMargin: number;
 };
 
 // Money for approved interviews, grouped by the month the interview took place,
-// newest month first. The panelist figures are exact. Receipts from NxtWave are
-// lump sums that aren't tied to particular interviews, so they are counted
-// against the oldest unpaid month first.
-export function financeByMonth(entries: PerfEntry[], receivedTotal: number) {
+// newest month first. Panelist cash is exact per interview (`cashPaid`).
+// Receipts from NxtWave are lump sums that aren't tied to particular
+// interviews, so they are counted against the oldest unpaid month first.
+export function financeByMonth(
+  entries: (PerfEntry & { id: string })[],
+  receivedTotal: number,
+  cashPaid: Map<string, number>,
+) {
   const byKey = new Map<string, MonthFinance>();
   let owedInterviews = 0;
   let unbillable = 0;
@@ -298,9 +307,13 @@ export function financeByMonth(entries: PerfEntry[], receivedTotal: number) {
         label: monthLabel(key),
         interviews: 0,
         billable: 0,
+        tds: 0,
+        netDue: 0,
         received: 0,
         receivable: 0,
         cost: 0,
+        deduction: 0,
+        netCost: 0,
         paid: 0,
         owed: 0,
         margin: 0,
@@ -311,11 +324,9 @@ export function financeByMonth(entries: PerfEntry[], receivedTotal: number) {
     const amount = entry.amount ?? 0;
     month.interviews += 1;
     month.cost += amount;
-    if (entry.status === "paid") month.paid += amount;
-    else {
-      month.owed += amount;
-      owedInterviews += 1;
-    }
+    month.deduction += round2(amount * PAYOUT_DEDUCTION_RATE);
+    if (entry.status === "paid") month.paid += cashPaid.get(entry.id) ?? amount;
+    else owedInterviews += 1;
     const claim = claimFor(entry);
     if (claim === null) unbillable += 1;
     else month.billable += claim;
@@ -324,23 +335,32 @@ export function financeByMonth(entries: PerfEntry[], receivedTotal: number) {
   const oldestFirst = [...byKey.values()].sort((a, b) => a.key.localeCompare(b.key));
   let unallocated = receivedTotal;
   for (const month of oldestFirst) {
-    month.received = Math.min(unallocated, month.billable);
-    unallocated -= month.received;
-    month.receivable = month.billable - month.received;
-    month.margin = month.billable - month.cost;
-    month.actualMargin = month.received - month.paid;
+    month.tds = round2(month.billable * NXTWAVE_TDS_RATE);
+    month.netDue = round2(month.billable - month.tds);
+    month.received = Math.min(unallocated, month.netDue);
+    unallocated = round2(unallocated - month.received);
+    month.receivable = round2(month.netDue - month.received);
+    month.netCost = round2(month.cost - month.deduction);
+    month.paid = round2(month.paid);
+    month.owed = round2(month.netCost - month.paid);
+    month.margin = round2(month.netDue - month.netCost);
+    month.actualMargin = round2(month.received - month.paid);
   }
 
   const sum = (pick: (month: MonthFinance) => number) =>
-    oldestFirst.reduce((total, month) => total + pick(month), 0);
+    round2(oldestFirst.reduce((total, month) => total + pick(month), 0));
   return {
     months: oldestFirst.reverse(),
     totals: {
       interviews: sum((m) => m.interviews),
       billable: sum((m) => m.billable),
+      tds: sum((m) => m.tds),
+      netDue: sum((m) => m.netDue),
       received: sum((m) => m.received),
       receivable: sum((m) => m.receivable),
       cost: sum((m) => m.cost),
+      deduction: sum((m) => m.deduction),
+      netCost: sum((m) => m.netCost),
       paid: sum((m) => m.paid),
       owed: sum((m) => m.owed),
       margin: sum((m) => m.margin),
@@ -348,7 +368,7 @@ export function financeByMonth(entries: PerfEntry[], receivedTotal: number) {
     },
     owedInterviews,
     unbillable,
-    // Money received beyond everything billable so far.
+    // Money received beyond everything due so far.
     advance: unallocated,
   };
 }

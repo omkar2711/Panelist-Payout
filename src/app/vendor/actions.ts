@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { isOutcomeId, outcomeOf } from "@/lib/interview-rates";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { payoutBreakdown, recoverableFor, round2, type PaymentRecord } from "@/lib/deductions";
 
 async function assertVendor() {
   const supabase = await createClient();
@@ -163,7 +164,6 @@ export async function recordPayment(_prevState: unknown, formData: FormData) {
   const { supabase } = await assertVendor();
 
   const panelist_id = String(formData.get("panelist_id") ?? "");
-  const amount = Number(formData.get("amount") ?? 0);
   const paid_on = String(formData.get("paid_on") ?? "");
   const mode = String(formData.get("mode") ?? "") || null;
   const reference = String(formData.get("reference") ?? "") || null;
@@ -173,13 +173,33 @@ export async function recordPayment(_prevState: unknown, formData: FormData) {
   if (!panelist_id || entryIds.length === 0) {
     return { error: "Select at least one approved interview to pay." };
   }
-  if (!Number.isFinite(amount) || amount < 0) {
-    return { error: "Enter a valid amount." };
+  // Work the deduction out here rather than trusting the form; the database
+  // checks the same sums again.
+  const [{ data: chosen }, { data: earlier }] = await Promise.all([
+    supabase
+      .from("interview_entries")
+      .select("id, amount")
+      .in("id", entryIds)
+      .eq("panelist_id", panelist_id)
+      .eq("status", "approved")
+      .returns<{ id: string; amount: number | null }[]>(),
+    supabase
+      .from("payments")
+      .select("id, panelist_id, amount, tds_amount, recovery_amount, paid_in_full")
+      .eq("panelist_id", panelist_id)
+      .returns<PaymentRecord[]>(),
+  ]);
+  if (!chosen || chosen.length !== new Set(entryIds).size) {
+    return { error: "Some of these interviews are already paid or no longer approved. Reload the page." };
   }
+  const gross = round2(chosen.reduce((sum, e) => sum + (e.amount ?? 0), 0));
+  const payout = payoutBreakdown(gross, recoverableFor(earlier ?? []));
 
   const { error } = await supabase.rpc("record_payment", {
     p_panelist_id: panelist_id,
-    p_amount: amount,
+    p_amount: payout.net,
+    p_tds: payout.tds,
+    p_recovery: payout.recovery,
     p_paid_on: paid_on || new Date().toISOString().slice(0, 10),
     p_mode: mode,
     p_reference: reference,

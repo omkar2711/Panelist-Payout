@@ -6,6 +6,13 @@ import {
   type PendingItem,
 } from "@/components/vendor-dashboard";
 import { fetchAllEntries } from "@/lib/all-entries";
+import {
+  NXTWAVE_TDS_RATE,
+  PAYOUT_DEDUCTION_RATE,
+  cashPaidByEntry,
+  round2,
+  type PaymentRecord,
+} from "@/lib/deductions";
 import { inPeriod, monthsSince, parsePeriod } from "@/lib/period";
 import {
   financeByMonth,
@@ -24,12 +31,11 @@ type PendingRow = WithPanelist & {
   outcome: string;
   interview_type: string | null;
 };
-type PaymentRow = WithPanelist & {
-  id: string;
-  amount: number;
-  paid_on: string;
-  mode: string | null;
-};
+type PaymentRow = WithPanelist &
+  PaymentRecord & {
+    paid_on: string;
+    mode: string | null;
+  };
 
 export default async function VendorDashboardPage({
   searchParams,
@@ -46,6 +52,7 @@ export default async function VendorDashboardPage({
     { data: pendingRows },
     { data: paymentRows },
     { data: receiptRows },
+    { data: links },
     entries,
   ] = await Promise.all([
     supabase.from("panelist_balances").select("*").returns<PanelistBalance[]>(),
@@ -59,13 +66,19 @@ export default async function VendorDashboardPage({
       .returns<PendingRow[]>(),
     supabase
       .from("payments")
-      .select("id, amount, paid_on, mode, panelists(profiles(full_name))")
+      .select(
+        "id, panelist_id, amount, tds_amount, recovery_amount, paid_in_full, paid_on, mode, panelists(profiles(full_name))",
+      )
       .order("paid_on", { ascending: false })
       .returns<PaymentRow[]>(),
     supabase
       .from("payout_batches")
       .select("amount")
       .returns<{ amount: number }[]>(),
+    supabase
+      .from("payment_entries")
+      .select("payment_id, entry_id")
+      .returns<{ payment_id: string; entry_id: string }[]>(),
     fetchAllEntries(supabase),
   ]);
 
@@ -78,7 +91,11 @@ export default async function VendorDashboardPage({
   const names = new Map(
     (balances ?? []).map((row) => [row.panelist_id, row.full_name]),
   );
-  const ledger = financeByMonth(entries, received);
+  // What each paid interview actually cost after the 10% payout deduction.
+  const cashPaid = cashPaidByEntry(entries, paymentRows ?? [], links ?? []);
+  const ledger = financeByMonth(entries, received, cashPaid);
+  const netOf = (amount: number | null) =>
+    round2((amount ?? 0) * (1 - PAYOUT_DEDUCTION_RATE));
   // Payouts run monthly, so anything approved for an earlier month is overdue.
   const overdue = entries.filter(
     (entry) =>
@@ -90,16 +107,25 @@ export default async function VendorDashboardPage({
   const inScope = entries.filter((entry) =>
     inPeriod(period, entry.interview_date),
   );
-  const sum = (rows: typeof entries) =>
-    rows.reduce((total, entry) => total + (entry.amount ?? 0), 0);
+  // Still owed for an interview: its payout after the deduction, less any cash
+  // already paid for it (negative while a September full payout is recovered).
+  const owedFor = (entry: (typeof entries)[number]) =>
+    round2(netOf(entry.amount) - (entry.status === "paid" ? (cashPaid.get(entry.id) ?? 0) : 0));
+  const total = (values: number[]) => round2(values.reduce((t, v) => t + v, 0));
   const scopedBalances: PanelistBalance[] = (balances ?? []).map((row) => {
     const own = inScope.filter(
       (entry) => entry.panelist_id === row.panelist_id,
     );
     return {
       ...row,
-      amount_due: sum(own.filter((entry) => entry.status === "approved")),
-      amount_paid: sum(own.filter((entry) => entry.status === "paid")),
+      amount_due: total(
+        own
+          .filter((entry) => entry.status === "approved" || entry.status === "paid")
+          .map(owedFor),
+      ),
+      amount_paid: total(
+        own.filter((entry) => entry.status === "paid").map((entry) => cashPaid.get(entry.id) ?? 0),
+      ),
       pending_review_count: own.filter((entry) => entry.status === "submitted")
         .length,
       approved_interview_count: own.filter(
@@ -113,9 +139,13 @@ export default async function VendorDashboardPage({
   const emptyMonth = {
     interviews: 0,
     billable: 0,
+    tds: 0,
+    netDue: 0,
     received: 0,
     receivable: 0,
     cost: 0,
+    deduction: 0,
+    netCost: 0,
     paid: 0,
     owed: 0,
     margin: 0,
@@ -169,16 +199,18 @@ export default async function VendorDashboardPage({
           (total, payment) => total + payment.amount,
           0,
         ),
-        owed: (balances ?? []).reduce((sum, row) => sum + row.amount_due, 0),
-        billableAllTime: ledger.totals.billable,
+        owed: ledger.totals.owed,
+        netDueAllTime: ledger.totals.netDue,
+        // Receipts are what NxtWave paid after its 10% TDS.
+        nxtwaveTds: round2((received * NXTWAVE_TDS_RATE) / (1 - NXTWAVE_TDS_RATE)),
+        deductedFromPanelists: total(
+          (paymentRows ?? []).map((p) => p.tds_amount + p.recovery_amount),
+        ),
       }}
       attention={{
         stalePending: stalePendingCount(entries, 3),
         overdueCount: overdue.length,
-        overdueAmount: overdue.reduce(
-          (sum, entry) => sum + (entry.amount ?? 0),
-          0,
-        ),
+        overdueAmount: total(overdue.map((entry) => netOf(entry.amount))),
       }}
     />
   );

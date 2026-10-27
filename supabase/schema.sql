@@ -55,7 +55,14 @@ create unique index interview_entries_no_duplicates
 create table payments (
   id uuid primary key default gen_random_uuid(),
   panelist_id uuid not null references panelists (id) on delete cascade,
+  -- cash actually paid: the interviews' payouts less the 10% deduction and any
+  -- recovery of an earlier full payout
   amount numeric(10, 2) not null,
+  tds_amount numeric(10, 2) not null default 0,
+  recovery_amount numeric(10, 2) not null default 0,
+  -- paid before the 10% deduction started (September 2026); its 10% is
+  -- recovered from that panelist's later payouts
+  paid_in_full boolean not null default false,
   paid_on date not null default current_date,
   mode text,
   reference text,
@@ -148,13 +155,14 @@ revoke all on panelist_balances from anon;
 create or replace function record_payment(
   p_panelist_id uuid,
   p_amount numeric,
+  p_tds numeric,
+  p_recovery numeric,
   p_paid_on date,
   p_mode text,
   p_reference text,
   p_notes text,
   p_entry_ids uuid[]
-)
-returns uuid
+) returns uuid
 language plpgsql
 security definer
 set search_path = public
@@ -163,6 +171,8 @@ declare
   v_payment_id uuid;
   v_wanted int;
   v_payable int;
+  v_gross numeric;
+  v_recoverable numeric;
 begin
   if not is_vendor() then
     raise exception 'only the vendor can record payments';
@@ -174,7 +184,9 @@ begin
   end if;
 
   perform 1 from interview_entries where id = any(p_entry_ids) for update;
-  select count(*) into v_payable
+  perform 1 from payments where panelist_id = p_panelist_id for update;
+
+  select count(*), coalesce(sum(amount), 0) into v_payable, v_gross
   from interview_entries
   where id = any(p_entry_ids)
     and panelist_id = p_panelist_id
@@ -183,14 +195,29 @@ begin
     raise exception 'some of these interviews are already paid, not approved, or belong to another panelist';
   end if;
 
-  if p_amount is distinct from (
-    select coalesce(sum(amount), 0) from interview_entries where id = any(p_entry_ids)
-  ) then
-    raise exception 'the payment amount must equal the total of the selected interviews';
+  -- 10% is deducted from every payout (src/lib/deductions.ts has the same rule).
+  if p_tds is distinct from round(v_gross * 0.10, 2) then
+    raise exception 'the deduction must be 10%% of the selected interviews';
   end if;
 
-  insert into payments (panelist_id, amount, paid_on, mode, reference, notes, created_by)
-  values (p_panelist_id, p_amount, p_paid_on, p_mode, p_reference, p_notes, auth.uid())
+  -- Full payouts made before the deduction started are recovered, up to 10% of them.
+  select coalesce(round(sum(amount) filter (where paid_in_full) * 0.10, 2), 0)
+         - coalesce(sum(recovery_amount), 0)
+    into v_recoverable
+  from payments
+  where panelist_id = p_panelist_id;
+  if p_recovery < 0 or p_recovery > greatest(v_recoverable, 0) then
+    raise exception 'the adjustment is more than what is left to recover';
+  end if;
+
+  if p_amount < 0 or p_amount is distinct from v_gross - p_tds - p_recovery then
+    raise exception 'the payment amount must equal the selected interviews less the deduction and adjustment';
+  end if;
+
+  insert into payments (panelist_id, amount, tds_amount, recovery_amount, paid_in_full,
+                        paid_on, mode, reference, notes, created_by)
+  values (p_panelist_id, p_amount, p_tds, p_recovery, false,
+          p_paid_on, p_mode, p_reference, p_notes, auth.uid())
   returning id into v_payment_id;
 
   insert into payment_entries (payment_id, entry_id)
@@ -198,9 +225,7 @@ begin
 
   update interview_entries
   set status = 'paid'
-  where id = any(p_entry_ids)
-    and panelist_id = p_panelist_id
-    and status = 'approved';
+  where id = any(p_entry_ids) and panelist_id = p_panelist_id and status = 'approved';
 
   return v_payment_id;
 end;
