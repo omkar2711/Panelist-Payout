@@ -6,6 +6,7 @@ import { PanelistDashboard } from "@/components/panelist-dashboard";
 import { PanelistPicker } from "@/components/panelist-picker";
 import { PANELIST_NOTICE } from "@/lib/notices";
 import { panelistDashboardData } from "@/lib/panelist-view";
+import { parsePeriod } from "@/lib/period";
 import { isTestPanelist } from "@/lib/test-accounts";
 
 type PanelistRow = { id: string; active: boolean; profiles: { full_name: string } };
@@ -15,7 +16,9 @@ export default async function PanelistViewPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const wanted = (await searchParams).panelist;
+  const params = await searchParams;
+  const wanted = params.panelist;
+  const period = parsePeriod(params.period);
   const supabase = await createClient();
   const { data } = await supabase
     .from("panelists")
@@ -39,7 +42,7 @@ export default async function PanelistViewPage({
   }
 
   const profile = { id: chosen.id, full_name: chosen.profiles.full_name };
-  const { entries, leaderboard } = await panelistDashboardData(supabase, profile);
+  const { entries, leaderboard, months } = await panelistDashboardData(supabase, profile);
   const options = panelists.map((p) => ({
     id: p.id,
     label: `${p.profiles.full_name}${
@@ -72,6 +75,8 @@ export default async function PanelistViewPage({
           entries={entries}
           leaderboard={leaderboard}
           userId={profile.id}
+          period={period}
+          months={months}
           preview
         />
       </div>

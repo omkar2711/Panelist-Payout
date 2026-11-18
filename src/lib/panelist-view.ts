@@ -1,5 +1,6 @@
 import "server-only";
 import type { createClient } from "@/lib/supabase/server";
+import { monthsSince } from "@/lib/period";
 import { todayInIndia } from "@/lib/performance";
 import {
   isTestPanelist,
@@ -28,16 +29,20 @@ export async function panelistDashboardData(
   ]);
 
   const board = (leaderboard ?? []) as LeaderboardRow[];
+  const today = todayInIndia();
+  // The months to choose from: the first logged interview's month to now.
+  const monthsOf = (list: InterviewEntry[]) => monthsSince(list.at(-1)?.interview_date, today);
   if (isTestPanelist(panelist.id)) {
-    const today = todayInIndia();
     const sample = sampleEntries(panelist.id, today);
     return {
       entries: sample,
       leaderboard: sampleLeaderboard(board, panelist.id, panelist.full_name, sample, today),
+      months: monthsOf(sample),
     };
   }
   return {
     entries: entries ?? [],
     leaderboard: withoutTestPanelists(board, (row) => row.panelist_id),
+    months: monthsOf(entries ?? []),
   };
 }

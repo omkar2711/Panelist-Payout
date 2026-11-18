@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { UserRound } from "lucide-react";
 
 // Which panelist's dashboard to show, kept in the page address (?panelist=id).
@@ -14,6 +14,7 @@ export function PanelistPicker({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
 
   return (
@@ -23,8 +24,9 @@ export function PanelistPicker({
       <select
         value={value}
         onChange={(e) => {
-          const next = e.target.value;
-          startTransition(() => router.push(`${pathname}?panelist=${next}`, { scroll: false }));
+          const params = new URLSearchParams(searchParams);
+          params.set("panelist", e.target.value);
+          startTransition(() => router.push(`${pathname}?${params}`, { scroll: false }));
         }}
         className={`max-w-64 bg-transparent font-medium text-slate-800 focus:outline-none ${pending ? "opacity-50" : ""}`}
       >

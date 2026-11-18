@@ -1,14 +1,16 @@
 "use client";
 
 import { useTransition } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays } from "lucide-react";
 import { monthLabel } from "@/lib/performance";
 
-// "All time" or one month, kept in the page address (?period=yyyy-mm).
+// "All time" or one month, kept in the page address (?period=yyyy-mm) next to
+// anything else already there.
 export function PeriodPicker({ months, value }: { months: string[]; value: string }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
 
   return (
@@ -18,9 +20,12 @@ export function PeriodPicker({ months, value }: { months: string[]; value: strin
       <select
         value={value}
         onChange={(e) => {
-          const next = e.target.value;
+          const params = new URLSearchParams(searchParams);
+          if (e.target.value === "all") params.delete("period");
+          else params.set("period", e.target.value);
+          const query = params.toString();
           startTransition(() =>
-            router.push(next === "all" ? pathname : `${pathname}?period=${next}`, { scroll: false }),
+            router.push(query ? `${pathname}?${query}` : pathname, { scroll: false }),
           );
         }}
         className={`bg-transparent font-medium text-slate-800 focus:outline-none ${pending ? "opacity-50" : ""}`}

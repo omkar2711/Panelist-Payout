@@ -36,21 +36,27 @@ const cell = "px-4 py-3 first:pl-6 last:pr-6";
 
 export function MyInterviews({
   entries,
+  initialMonth = "",
   readOnly = false,
 }: {
   entries: InterviewEntry[];
+  initialMonth?: string;
   readOnly?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [approval, setApproval] = useState<"" | EntryStatus>("");
   const [outcome, setOutcome] = useState("");
-  const [month, setMonth] = useState("");
+  const [month, setMonth] = useState(initialMonth);
   const [sort, setSort] = useState<SortId>("newest");
   const [page, setPage] = useState(1);
 
   const months = useMemo(
-    () => [...new Set(entries.map((e) => e.interview_date.slice(0, 7)))].sort().reverse(),
-    [entries],
+    () =>
+      [...new Set([...entries.map((e) => e.interview_date.slice(0, 7)), initialMonth])]
+        .filter(Boolean)
+        .sort()
+        .reverse(),
+    [entries, initialMonth],
   );
 
   const shown = useMemo(() => {
