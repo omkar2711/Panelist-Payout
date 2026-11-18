@@ -3,6 +3,7 @@ import { InterviewExplorerLoader } from "@/components/interview-explorer-loader"
 import { PeriodPicker } from "@/components/period-picker";
 import { monthsSince, parsePeriod } from "@/lib/period";
 import { todayInIndia } from "@/lib/performance";
+import { isTestPanelist, withoutTestPanelists } from "@/lib/test-accounts";
 import type { InterviewRow } from "@/components/interview-explorer";
 import type { EntryStatus } from "@/lib/types";
 
@@ -42,7 +43,7 @@ export default async function InterviewsPage({
       .order("id")
       .range(from, from + BATCH - 1)
       .returns<EntryRow[]>();
-    entries.push(...(data ?? []));
+    entries.push(...(data ?? []).filter((entry) => !isTestPanelist(entry.panelist_id)));
     if (!data || data.length < BATCH) break;
   }
 
@@ -64,7 +65,7 @@ export default async function InterviewsPage({
     status: entry.status,
     amount: entry.amount,
   }));
-  const panelists = (panelistRows ?? [])
+  const panelists = withoutTestPanelists(panelistRows ?? [], (panelist) => panelist.id)
     .map((panelist) => ({ id: panelist.id, name: panelist.profiles.full_name }))
     .sort((a, b) => a.name.localeCompare(b.name));
 

@@ -1,4 +1,5 @@
 import type { createClient } from "@/lib/supabase/server";
+import { withoutTestPanelists } from "@/lib/test-accounts";
 import type { EntryStatus } from "@/lib/types";
 
 export type LedgerEntry = {
@@ -28,5 +29,5 @@ export async function fetchAllEntries(supabase: Awaited<ReturnType<typeof create
     entries.push(...(data ?? []));
     if (!data || data.length < BATCH) break;
   }
-  return entries;
+  return withoutTestPanelists(entries, (entry) => entry.panelist_id);
 }

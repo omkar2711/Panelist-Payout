@@ -3,6 +3,7 @@ import { Avatar } from "@/components/avatar";
 import { PageHeader } from "@/components/page-header";
 import { PeriodPicker } from "@/components/period-picker";
 import { recoverableFor } from "@/lib/deductions";
+import { withoutTestPanelists } from "@/lib/test-accounts";
 import { inPeriod, parsePeriod } from "@/lib/period";
 import { monthLabel } from "@/lib/performance";
 import { periodMonths } from "@/lib/period-months";
@@ -89,7 +90,7 @@ export default async function PaymentsPage({
 
   // Active panelists, plus inactive ones who are still owed money.
   const owedIds = new Set((approvedEntries ?? []).map((e) => e.panelist_id));
-  const panelistOptions = (panelists ?? [])
+  const panelistOptions = withoutTestPanelists(panelists ?? [], (p) => p.id)
     .filter((p) => p.active || owedIds.has(p.id))
     .map((p) => ({
       id: p.id,

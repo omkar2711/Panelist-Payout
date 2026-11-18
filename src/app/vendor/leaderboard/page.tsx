@@ -6,6 +6,7 @@ import { Scorecards, type Scorecard } from "@/components/scorecards";
 import { fetchAllEntries } from "@/lib/all-entries";
 import { monthsSince, parsePeriod } from "@/lib/period";
 import { isCounted, panelistStats, todayInIndia } from "@/lib/performance";
+import { withoutTestPanelists } from "@/lib/test-accounts";
 import type { LeaderboardRow } from "@/lib/types";
 
 function previousMonth(key: string) {
@@ -39,9 +40,11 @@ export default async function VendorLeaderboardPage({
   // month's last day (or today, for the current month).
   const asOf = period.isAll || period.key === today.slice(0, 7) ? today : lastDayOf(period.key);
   const counted = entries.filter(isCounted);
+  // Test accounts are left out of the board and the scorecards.
+  const realBoard = withoutTestPanelists((board ?? []) as LeaderboardRow[], (row) => row.panelist_id);
   const rows: LeaderboardRow[] = period.isAll
-    ? ((board ?? []) as LeaderboardRow[])
-    : ((board ?? []) as LeaderboardRow[]).map((row) => {
+    ? realBoard
+    : realBoard.map((row) => {
         const own = counted.filter((entry) => entry.panelist_id === row.panelist_id);
         return {
           ...row,
@@ -52,7 +55,7 @@ export default async function VendorLeaderboardPage({
         };
       });
 
-  const cards: Scorecard[] = (panelists ?? [])
+  const cards: Scorecard[] = withoutTestPanelists(panelists ?? [], (panelist) => panelist.id)
     .map((panelist) => {
       const own = entries.filter(
         (entry) => entry.panelist_id === panelist.id && entry.interview_date <= asOf,

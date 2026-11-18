@@ -34,6 +34,7 @@ export default async function VendorLayout({
           { href: "/vendor/entries", label: "Approvals", icon: "approvals" },
           { href: "/vendor/interviews", label: "Interviews", icon: "interviews" },
           { href: "/vendor/panelists", label: "Panelists", icon: "panelists" },
+          { href: "/vendor/panelist-view", label: "Panelist view", icon: "panelistView" },
           { href: "/vendor/leaderboard", label: "Leaderboard", icon: "leaderboard" },
           { href: "/vendor/payments", label: "Payments", icon: "payments" },
           { href: "/vendor/invoice", label: "Invoices", icon: "invoice" },

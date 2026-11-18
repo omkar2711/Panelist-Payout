@@ -1,15 +1,36 @@
 import { createClient } from "@/lib/supabase/server";
-import { getSignedInUserId } from "@/lib/session";
+import { getSignedInProfile } from "@/lib/session";
 import { Leaderboard, StandingCard } from "@/components/leaderboard";
+import { todayInIndia } from "@/lib/performance";
+import {
+  isTestPanelist,
+  sampleEntries,
+  sampleLeaderboard,
+  withoutTestPanelists,
+} from "@/lib/test-accounts";
 import type { LeaderboardRow } from "@/lib/types";
 
 export default async function PanelistLeaderboardPage() {
   const supabase = await createClient();
-  const [userId, { data }] = await Promise.all([
-    getSignedInUserId(),
+  const [profile, { data }] = await Promise.all([
+    getSignedInProfile(),
     supabase.rpc("get_leaderboard"),
   ]);
-  const rows = (data ?? []) as LeaderboardRow[];
+  const board = (data ?? []) as LeaderboardRow[];
+  const userId = profile?.id;
+  const today = todayInIndia();
+  // A test account is placed by its sample interviews; everyone else sees the
+  // board without test accounts.
+  const rows =
+    profile && isTestPanelist(profile.id)
+      ? sampleLeaderboard(
+          board,
+          profile.id,
+          profile.full_name,
+          sampleEntries(profile.id, today),
+          today,
+        )
+      : withoutTestPanelists(board, (row) => row.panelist_id);
 
   return (
     <div className="space-y-6">

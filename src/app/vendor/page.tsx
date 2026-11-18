@@ -6,6 +6,7 @@ import {
   type PendingItem,
 } from "@/components/vendor-dashboard";
 import { fetchAllEntries } from "@/lib/all-entries";
+import { withoutTestPanelists } from "@/lib/test-accounts";
 import {
   NXTWAVE_TDS_RATE,
   PAYOUT_DEDUCTION_RATE,
@@ -87,6 +88,8 @@ export default async function VendorDashboardPage({
     fetchAllEntries(supabase),
   ]);
 
+  // Test accounts are left out of every vendor figure.
+  const realBalances = withoutTestPanelists(balances ?? [], (row) => row.panelist_id);
   const today = todayInIndia();
   const thisMonth = today.slice(0, 7);
   const received = (receiptRows ?? []).reduce(
@@ -94,7 +97,7 @@ export default async function VendorDashboardPage({
     0,
   );
   const names = new Map(
-    (balances ?? []).map((row) => [row.panelist_id, row.full_name]),
+    realBalances.map((row) => [row.panelist_id, row.full_name]),
   );
   // What each paid interview actually cost after the 10% payout deduction.
   const cashPaid = cashPaidByEntry(entries, paymentRows ?? [], links ?? []);
@@ -118,7 +121,7 @@ export default async function VendorDashboardPage({
   const owedFor = (entry: (typeof entries)[number]) =>
     round2(netOf(entry.amount) - (entry.status === "paid" ? (cashPaid.get(entry.id) ?? 0) : 0));
   const total = (values: number[]) => round2(values.reduce((t, v) => t + v, 0));
-  const scopedBalances: PanelistBalance[] = (balances ?? []).map((row) => {
+  const scopedBalances: PanelistBalance[] = realBalances.map((row) => {
     const own = inScope.filter(
       (entry) => entry.panelist_id === row.panelist_id,
     );

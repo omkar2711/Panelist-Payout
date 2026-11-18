@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   CheckSquare,
   ClipboardList,
+  Eye,
   FileText,
   LayoutDashboard,
   Trophy,
@@ -21,6 +22,7 @@ const NAV_ICONS = {
   approvals: CheckSquare,
   interviews: ClipboardList,
   panelists: Users,
+  panelistView: Eye,
   leaderboard: Trophy,
   payments: Wallet,
   invoice: FileText,

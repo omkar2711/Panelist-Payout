@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { isOfferedDuration, isOutcomeId } from "@/lib/interview-rates";
 import { todayInIndia } from "@/lib/performance";
 import { createClient } from "@/lib/supabase/server";
+import { isTestPanelist } from "@/lib/test-accounts";
 
 export async function addEntry(_prevState: unknown, formData: FormData) {
   const supabase = await createClient();
@@ -11,6 +12,9 @@ export async function addEntry(_prevState: unknown, formData: FormData) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not signed in." };
+  if (isTestPanelist(user.id)) {
+    return { error: "This is a test account, so interviews logged here aren't saved." };
+  }
 
   const interview_date = String(formData.get("interview_date") ?? "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(interview_date)) {
@@ -72,6 +76,8 @@ export async function revokeEntry(entryId: string) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Not signed in.");
+  // A test account only has sample interviews, which aren't stored.
+  if (isTestPanelist(user.id)) return;
 
   // The RLS delete policy also restricts this to the panelist's own
   // still-submitted entries, so an already-approved entry can't be revoked.

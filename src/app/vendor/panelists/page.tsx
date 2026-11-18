@@ -1,9 +1,11 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { AddPanelistForm } from "@/components/add-panelist-form";
 import { Avatar } from "@/components/avatar";
 import { PageHeader } from "@/components/page-header";
 import { ResetPanelistPassword } from "@/components/reset-panelist-password";
 import { updateRates, togglePanelistActive } from "@/app/vendor/actions";
+import { isTestPanelist } from "@/lib/test-accounts";
 import type { Panelist, Profile } from "@/lib/types";
 
 type Row = Panelist & { profiles: Pick<Profile, "full_name" | "email"> };
@@ -67,6 +69,20 @@ export default async function PanelistsPage() {
                           <span className="font-medium text-slate-800">
                             {p.profiles.full_name}
                           </span>
+                          <Link
+                            href={`/vendor/panelist-view?panelist=${p.id}`}
+                            className="text-xs font-medium text-blue-600 hover:underline"
+                          >
+                            View dashboard
+                          </Link>
+                          {isTestPanelist(p.id) ? (
+                            <span
+                              title="Sees sample data only and is left out of all totals"
+                              className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200"
+                            >
+                              Test account
+                            </span>
+                          ) : null}
                         </div>
                       </td>
                       <td className="px-6 py-3 text-slate-500">

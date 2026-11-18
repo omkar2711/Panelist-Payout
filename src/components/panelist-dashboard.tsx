@@ -19,11 +19,15 @@ export function PanelistDashboard({
   entries,
   leaderboard,
   userId,
+  preview = false,
 }: {
   firstName: string;
   entries: InterviewEntry[];
   leaderboard: LeaderboardRow[];
   userId: string;
+  // Shown to the vendor exactly as the panelist sees it, with the form and
+  // buttons switched off.
+  preview?: boolean;
 }) {
   const approved = entries.filter((e) => e.status === "approved");
   const paid = entries.filter((e) => e.status === "paid");
@@ -96,13 +100,15 @@ export function PanelistDashboard({
             <p className="mb-4 mt-1 text-xs text-slate-400">
               It goes to the vendor for approval before it counts.
             </p>
-            <AddEntryForm today={today} />
+            <fieldset disabled={preview} className="disabled:opacity-60">
+              <AddEntryForm today={today} />
+            </fieldset>
           </section>
 
           <StandingCard
             rows={leaderboard}
             currentUserId={userId}
-            href="/panelist/leaderboard"
+            href={preview ? undefined : "/panelist/leaderboard"}
           />
         </div>
 
@@ -111,7 +117,7 @@ export function PanelistDashboard({
             <EarningsExplorerLoader points={earningPoints} />
           </section>
 
-          <MyInterviews entries={entries} />
+          <MyInterviews entries={entries} readOnly={preview} />
         </div>
       </div>
     </div>
