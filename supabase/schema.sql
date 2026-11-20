@@ -60,6 +60,9 @@ create table payments (
   amount numeric(10, 2) not null,
   tds_amount numeric(10, 2) not null default 0,
   recovery_amount numeric(10, 2) not null default 0,
+  -- the worked-out amount less what was actually paid, when the vendor paid a
+  -- custom amount (negative if more was paid)
+  adjustment_amount numeric(10, 2) not null default 0,
   -- paid before the 10% deduction started (September 2026); its 10% is
   -- recovered from that panelist's later payouts
   paid_in_full boolean not null default false,
@@ -161,8 +164,11 @@ group by p.id, pr.full_name, pr.email, p.active;
 revoke all on panelist_balances from anon;
 
 -- Atomically records a vendor payment against a set of approved entries.
--- Every listed interview must be approved, unpaid and belong to that panelist;
--- and the amount must equal their total; otherwise nothing is recorded. The
+-- Every listed interview must be approved, unpaid and belong to that panelist,
+-- the deduction must be none or 10%, and the September adjustment no more than
+-- what is left to recover; otherwise nothing is recorded. The amount paid may
+-- differ from the worked-out one (a custom amount); the difference is kept as
+-- adjustment_amount. The
 -- row locks stop two simultaneous requests
 -- (a double-click, two open tabs) from paying the same interviews twice.
 create or replace function record_payment(
@@ -186,6 +192,7 @@ declare
   v_payable int;
   v_gross numeric;
   v_recoverable numeric;
+  v_adjustment numeric;
 begin
   if not is_vendor() then
     raise exception 'only the vendor can record payments';
@@ -208,9 +215,10 @@ begin
     raise exception 'some of these interviews are already paid, not approved, or belong to another panelist';
   end if;
 
-  -- 10% is deducted from every payout (src/lib/deductions.ts has the same rule).
-  if p_tds is distinct from round(v_gross * 0.10, 2) then
-    raise exception 'the deduction must be 10%% of the selected interviews';
+  -- The deduction is 10% of the payout, or none if the vendor switched it off
+  -- (src/lib/deductions.ts has the same rule).
+  if p_tds is distinct from 0 and p_tds is distinct from round(v_gross * 0.10, 2) then
+    raise exception 'the deduction must be 10%% of the selected interviews, or none';
   end if;
 
   -- Full payouts made before the deduction started are recovered, up to 10% of them.
@@ -223,14 +231,15 @@ begin
     raise exception 'the adjustment is more than what is left to recover';
   end if;
 
-  if p_amount < 0 or p_amount is distinct from v_gross - p_tds - p_recovery then
-    raise exception 'the payment amount must equal the selected interviews less the deduction and adjustment';
+  if p_amount is null or p_amount < 0 then
+    raise exception 'the payment amount can''t be negative';
   end if;
+  v_adjustment := v_gross - p_tds - p_recovery - p_amount;
 
-  insert into payments (panelist_id, amount, tds_amount, recovery_amount, paid_in_full,
-                        paid_on, mode, reference, notes, created_by)
-  values (p_panelist_id, p_amount, p_tds, p_recovery, false,
-          p_paid_on, p_mode, p_reference, p_notes, auth.uid())
+  insert into payments (panelist_id, amount, tds_amount, recovery_amount, adjustment_amount,
+                        paid_in_full, paid_on, mode, reference, notes, created_by)
+  values (p_panelist_id, p_amount, p_tds, p_recovery, v_adjustment,
+          false, p_paid_on, p_mode, p_reference, p_notes, auth.uid())
   returning id into v_payment_id;
 
   insert into payment_entries (payment_id, entry_id)

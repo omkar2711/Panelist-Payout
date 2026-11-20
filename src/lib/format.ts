@@ -33,3 +33,15 @@ export function formatTime(time: string | null) {
   const period = hours >= 12 ? "PM" : "AM";
   return `${hours % 12 || 12}:${String(minutes).padStart(2, "0")} ${period}`;
 }
+
+const exactFormatter = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+// Rupees and paise, for statements kept for tax records.
+export function formatExact(amount: number) {
+  return exactFormatter.format(amount);
+}

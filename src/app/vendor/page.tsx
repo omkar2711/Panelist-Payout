@@ -34,6 +34,8 @@ type PendingRow = WithPanelist & {
 };
 type PaymentRow = WithPanelist &
   PaymentRecord & {
+    // missing on payments recorded before custom amounts were allowed
+    adjustment_amount?: number;
     paid_on: string;
     mode: string | null;
   };
@@ -69,7 +71,7 @@ export default async function VendorDashboardPage({
     supabase
       .from("payments")
       .select(
-        "id, panelist_id, amount, tds_amount, recovery_amount, paid_in_full, paid_on, mode, panelists(profiles(full_name))",
+        "*, panelists(profiles(full_name))",
       )
       .order("paid_on", { ascending: false })
       .returns<PaymentRow[]>(),
@@ -100,9 +102,10 @@ export default async function VendorDashboardPage({
     realBalances.map((row) => [row.panelist_id, row.full_name]),
   );
   // What each paid interview actually cost after the 10% payout deduction.
-  const cashPaid = cashPaidByEntry(entries, paymentRows ?? [], links ?? []);
+  const paidOut = cashPaidByEntry(entries, paymentRows ?? [], links ?? []);
+  const cashPaid = paidOut.cash;
   const invoiced = new Map((invoiceRows ?? []).map((row) => [row.month, Number(row.amount)]));
-  const ledger = financeByMonth(entries, received, cashPaid, invoiced);
+  const ledger = financeByMonth(entries, received, paidOut, invoiced);
   const netOf = (amount: number | null) =>
     round2((amount ?? 0) * (1 - PAYOUT_DEDUCTION_RATE));
   // Payouts run monthly, so anything approved for an earlier month is overdue.
@@ -118,8 +121,11 @@ export default async function VendorDashboardPage({
   );
   // Still owed for an interview: its payout after the deduction, less any cash
   // already paid for it (negative while a September full payout is recovered).
+  // An ordinary payment settles its interviews, whatever was deducted.
   const owedFor = (entry: (typeof entries)[number]) =>
-    round2(netOf(entry.amount) - (entry.status === "paid" ? (cashPaid.get(entry.id) ?? 0) : 0));
+    paidOut.settled.has(entry.id)
+      ? 0
+      : round2(netOf(entry.amount) - (entry.status === "paid" ? (cashPaid.get(entry.id) ?? 0) : 0));
   const total = (values: number[]) => round2(values.reduce((t, v) => t + v, 0));
   const scopedBalances: PanelistBalance[] = realBalances.map((row) => {
     const own = inScope.filter(
@@ -215,7 +221,7 @@ export default async function VendorDashboardPage({
         // Receipts are what NxtWave paid after its 10% TDS.
         nxtwaveTds: round2((received * NXTWAVE_TDS_RATE) / (1 - NXTWAVE_TDS_RATE)),
         deductedFromPanelists: total(
-          (paymentRows ?? []).map((p) => p.tds_amount + p.recovery_amount),
+          (paymentRows ?? []).map((p) => p.tds_amount + p.recovery_amount + (p.adjustment_amount ?? 0)),
         ),
       }}
       attention={{

@@ -296,7 +296,7 @@ export type MonthFinance = {
 export function financeByMonth(
   entries: (PerfEntry & { id: string })[],
   receivedTotal: number,
-  cashPaid: Map<string, number>,
+  { cash: cashPaid, settled }: { cash: Map<string, number>; settled: Set<string> },
   invoices: Map<string, number> = new Map(),
 ) {
   const byKey = new Map<string, MonthFinance>();
@@ -335,7 +335,10 @@ export function financeByMonth(
     const amount = entry.amount ?? 0;
     month.interviews += 1;
     month.cost += amount;
-    month.deduction += round2(amount * PAYOUT_DEDUCTION_RATE);
+    // Settled interviews count what was actually withheld; the rest the usual 10%.
+    month.deduction += settled.has(entry.id)
+      ? round2(amount - (cashPaid.get(entry.id) ?? amount))
+      : round2(amount * PAYOUT_DEDUCTION_RATE);
     if (entry.status === "paid") month.paid += cashPaid.get(entry.id) ?? amount;
     else owedInterviews += 1;
     const claim = claimFor(entry);

@@ -169,9 +169,16 @@ export async function recordPayment(_prevState: unknown, formData: FormData) {
   const reference = String(formData.get("reference") ?? "") || null;
   const notes = String(formData.get("notes") ?? "") || null;
   const entryIds = formData.getAll("entry_ids").map(String);
+  const deduct = formData.get("deduct") === "on";
+  const recover = formData.get("recover") === "on";
+  const custom = String(formData.get("custom_amount") ?? "").trim();
+  const customAmount = formData.get("use_custom") === "on" && custom !== "" ? Number(custom) : null;
 
   if (!panelist_id || entryIds.length === 0) {
     return { error: "Select at least one approved interview to pay." };
+  }
+  if (customAmount !== null && !(Number.isFinite(customAmount) && customAmount >= 0)) {
+    return { error: "Enter the amount you paid, in rupees." };
   }
   // Work the deduction out here rather than trusting the form; the database
   // checks the same sums again.
@@ -193,7 +200,11 @@ export async function recordPayment(_prevState: unknown, formData: FormData) {
     return { error: "Some of these interviews are already paid or no longer approved. Reload the page." };
   }
   const gross = round2(chosen.reduce((sum, e) => sum + (e.amount ?? 0), 0));
-  const payout = payoutBreakdown(gross, recoverableFor(earlier ?? []));
+  const payout = payoutBreakdown(gross, recoverableFor(earlier ?? []), {
+    deduct,
+    recover,
+    customAmount: customAmount === null ? null : round2(customAmount),
+  });
 
   const { error } = await supabase.rpc("record_payment", {
     p_panelist_id: panelist_id,
@@ -207,6 +218,14 @@ export async function recordPayment(_prevState: unknown, formData: FormData) {
     p_entry_ids: entryIds,
   });
 
+  // The database's older payment rule only accepts the full 10% and September
+  // adjustment with no custom amount.
+  if (error && /must be 10%|must equal the selected/.test(error.message)) {
+    return {
+      error:
+        "Switching off a deduction or paying a different amount needs a one-time database update that hasn't been applied yet. Record it with both boxes ticked for now.",
+    };
+  }
   if (error) return { error: error.message };
 
   revalidatePath("/vendor/payments");

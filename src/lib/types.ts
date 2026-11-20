@@ -45,6 +45,9 @@ export interface Payment {
   amount: number;
   tds_amount: number;
   recovery_amount: number;
+  // worked-out amount less what was actually paid, when the vendor paid a
+  // custom amount (negative if more was paid)
+  adjustment_amount?: number;
   // paid before the 10% deduction started, so its 10% is recovered later
   paid_in_full: boolean;
   paid_on: string;

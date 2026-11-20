@@ -79,7 +79,10 @@ export default async function PaymentsPage({
     const [y, m] = todayInIndia().slice(0, 7).split("-").map(Number);
     return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
   })();
-  const deductedTotal = payments.reduce((sum, p) => sum + p.tds_amount + p.recovery_amount, 0);
+  // Everything kept back from a payment: the 10% deduction, the September
+  // adjustment and any difference when a custom amount was paid.
+  const keptBack = (p: Payment) => p.tds_amount + p.recovery_amount + (p.adjustment_amount ?? 0);
+  const deductedTotal = payments.reduce((sum, p) => sum + keptBack(p), 0);
   // What is still to be recovered from each panelist's September full payout.
   const recoverable = Object.fromEntries(
     (panelists ?? []).map((p) => [
@@ -185,16 +188,23 @@ export default async function PaymentsPage({
                       <td className="px-6 py-3">{formatDate(p.paid_on)}</td>
                       <td className="px-6 py-3 text-slate-500">{p.mode ?? "—"}</td>
                       <td className="px-6 py-3 text-right tabular-nums text-slate-500">
-                        {formatCurrency(p.amount + p.tds_amount + p.recovery_amount)}
+                        {formatCurrency(p.amount + keptBack(p))}
                       </td>
                       <td className="px-6 py-3 text-right tabular-nums text-slate-500">
-                        {p.tds_amount + p.recovery_amount > 0 ? (
+                        {keptBack(p) !== 0 ? (
                           <span
-                            title={`10% deduction ${formatCurrency(p.tds_amount)}${
-                              p.recovery_amount ? ` + September adjustment ${formatCurrency(p.recovery_amount)}` : ""
-                            }`}
+                            title={[
+                              p.tds_amount ? `10% deduction ${formatCurrency(p.tds_amount)}` : "",
+                              p.recovery_amount ? `September adjustment ${formatCurrency(p.recovery_amount)}` : "",
+                              p.adjustment_amount
+                                ? `Other adjustment ${p.adjustment_amount < 0 ? "−" : ""}${formatCurrency(Math.abs(p.adjustment_amount))}`
+                                : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" + ")}
                           >
-                            −{formatCurrency(p.tds_amount + p.recovery_amount)}
+                            {keptBack(p) < 0 ? "+" : "−"}
+                            {formatCurrency(Math.abs(keptBack(p)))}
                           </span>
                         ) : p.paid_in_full ? (
                           <span className="text-xs text-slate-400">Paid in full</span>

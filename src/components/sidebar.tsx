@@ -8,6 +8,7 @@ import {
   Eye,
   FileText,
   LayoutDashboard,
+  ScrollText,
   Trophy,
   Users,
   Wallet,
@@ -25,6 +26,7 @@ const NAV_ICONS = {
   panelistView: Eye,
   leaderboard: Trophy,
   payments: Wallet,
+  statement: ScrollText,
   invoice: FileText,
 } as const;
 
