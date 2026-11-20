@@ -8,6 +8,7 @@ import { inPeriod, parsePeriod } from "@/lib/period";
 import { monthLabel } from "@/lib/performance";
 import { periodMonths } from "@/lib/period-months";
 import { ClientInvoiceForm } from "@/components/client-invoice-form";
+import { EditPaymentButton, EditReceiptButton } from "@/components/edit-money-dialogs";
 import { ReceiptForm } from "@/components/receipt-form";
 import { removeClientInvoice } from "@/app/vendor/actions";
 import { RecordPaymentForm } from "@/components/record-payment-form";
@@ -40,6 +41,7 @@ export default async function PaymentsPage({
     { data: allReceipts },
     { data: allInvoices },
     months,
+    { data: links },
   ] = await Promise.all([
       supabase
         .from("panelists")
@@ -67,7 +69,12 @@ export default async function PaymentsPage({
         .order("month", { ascending: false })
         .returns<{ id: string; month: string; invoice_no: string | null; amount: number; issued_on: string | null }[]>(),
       periodMonths(supabase),
+      supabase.from("payment_entries").select("payment_id").returns<{ payment_id: string }[]>(),
     ]);
+  const interviewsIn = new Map<string, number>();
+  for (const link of links ?? []) {
+    interviewsIn.set(link.payment_id, (interviewsIn.get(link.payment_id) ?? 0) + 1);
+  }
 
   // Payments and receipts follow the date the money moved; the payment form
   // offers the chosen month's approved interviews.
@@ -162,12 +169,13 @@ export default async function PaymentsPage({
                   <th className="px-6 py-2.5 text-right">Interviews</th>
                   <th className="px-6 py-2.5 text-right">Deducted</th>
                   <th className="px-6 py-2.5 text-right">Paid</th>
+                  <th className="w-10 py-2.5 pr-4"></th>
                 </tr>
               </thead>
               <tbody>
                 {payments.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-6 text-center text-slate-400">
+                    <td colSpan={7} className="px-6 py-6 text-center text-slate-400">
                       {period.isAll ? "No payments recorded yet." : `No payments made in ${period.label}.`}
                     </td>
                   </tr>
@@ -214,6 +222,13 @@ export default async function PaymentsPage({
                       </td>
                       <td className="px-6 py-3 text-right font-medium tabular-nums">
                         {formatCurrency(p.amount)}
+                      </td>
+                      <td className="py-3 pr-4 text-right">
+                        <EditPaymentButton
+                          payment={p}
+                          panelistName={p.panelists.profiles.full_name}
+                          interviewCount={interviewsIn.get(p.id) ?? 0}
+                        />
                       </td>
                     </tr>
                   ))
@@ -339,12 +354,13 @@ export default async function PaymentsPage({
                   <th className="px-6 py-2.5">For</th>
                   <th className="px-6 py-2.5">Notes</th>
                   <th className="px-6 py-2.5 text-right">Amount</th>
+                  <th className="w-10 py-2.5 pr-4"></th>
                 </tr>
               </thead>
               <tbody>
                 {receipts.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-6 text-center text-slate-400">
+                    <td colSpan={5} className="px-6 py-6 text-center text-slate-400">
                       {period.isAll ? "No receipts recorded yet." : `No receipts in ${period.label}.`}
                     </td>
                   </tr>
@@ -361,6 +377,9 @@ export default async function PaymentsPage({
                       <td className="px-6 py-3 text-slate-500">{receipt.notes ?? "—"}</td>
                       <td className="whitespace-nowrap px-6 py-3 text-right font-medium tabular-nums">
                         {formatCurrency(receipt.amount)}
+                      </td>
+                      <td className="py-3 pr-4 text-right">
+                        <EditReceiptButton receipt={receipt} />
                       </td>
                     </tr>
                   ))

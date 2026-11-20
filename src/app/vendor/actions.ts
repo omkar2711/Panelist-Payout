@@ -262,6 +262,98 @@ export async function recordReceipt(_prevState: unknown, formData: FormData) {
 
 // The invoice actually raised to NxtWave for a month. Saving a month again
 // replaces that month's invoice.
+// Editing payments and receipts relies on database functions and permissions
+// added in supabase/schema.sql; until they are applied the database refuses.
+const NEEDS_DB_UPDATE =
+  "Editing needs a one-time database update that hasn't been applied yet.";
+const missingFunction = (error: { code?: string; message: string }) =>
+  error.code === "PGRST202" || /could not find the function/i.test(error.message);
+
+function revalidateMoney() {
+  for (const path of ["/vendor/payments", "/vendor/statement", "/vendor", "/vendor/entries", "/panelist"]) {
+    revalidatePath(path);
+  }
+}
+
+export async function updatePayment(_prevState: unknown, formData: FormData) {
+  const { supabase } = await assertVendor();
+  const id = String(formData.get("id") ?? "");
+  const amount = Number(formData.get("amount"));
+  const paid_on = String(formData.get("paid_on") ?? "");
+  if (!id) return { error: "This payment no longer exists.", done: false };
+  if (!Number.isFinite(amount) || amount < 0) {
+    return { error: "Enter the amount you paid, in rupees.", done: false };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(paid_on)) {
+    return { error: "Choose the date it was paid.", done: false };
+  }
+
+  const { error } = await supabase.rpc("update_payment", {
+    p_payment_id: id,
+    p_amount: round2(amount),
+    p_paid_on: paid_on,
+    p_mode: String(formData.get("mode") ?? "").trim() || null,
+    p_reference: String(formData.get("reference") ?? "").trim() || null,
+    p_notes: String(formData.get("notes") ?? "").trim() || null,
+  });
+  if (error) return { error: missingFunction(error) ? NEEDS_DB_UPDATE : error.message, done: false };
+
+  revalidateMoney();
+  return { error: "", done: true };
+}
+
+export async function undoPayment(_prevState: unknown, formData: FormData) {
+  const { supabase } = await assertVendor();
+  const id = String(formData.get("id") ?? "");
+  const { error } = await supabase.rpc("undo_payment", { p_payment_id: id });
+  if (error) return { error: missingFunction(error) ? NEEDS_DB_UPDATE : error.message, done: false };
+
+  revalidateMoney();
+  return { error: "", done: true };
+}
+
+export async function updateReceipt(_prevState: unknown, formData: FormData) {
+  const { supabase } = await assertVendor();
+  const id = String(formData.get("id") ?? "");
+  const amount = Number(formData.get("amount"));
+  const received_on = String(formData.get("received_on") ?? "");
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { error: "Enter the amount you received.", done: false };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(received_on)) {
+    return { error: "Choose the date it was received.", done: false };
+  }
+
+  // Without the update permission the database changes nothing and reports no
+  // error, so check that the row came back.
+  const { data, error } = await supabase
+    .from("payout_batches")
+    .update({
+      amount: round2(amount),
+      received_on,
+      period_label: String(formData.get("period_label") ?? "").trim() || null,
+      notes: String(formData.get("notes") ?? "").trim() || null,
+    })
+    .eq("id", id)
+    .select("id");
+  if (error) return { error: error.message, done: false };
+  if (!data?.length) return { error: NEEDS_DB_UPDATE, done: false };
+
+  revalidateMoney();
+  return { error: "", done: true };
+}
+
+export async function deleteReceipt(_prevState: unknown, formData: FormData) {
+  const { supabase } = await assertVendor();
+  const id = String(formData.get("id") ?? "");
+  const { data, error } = await supabase.from("payout_batches").delete().eq("id", id).select("id");
+  if (error) return { error: error.message, done: false };
+  if (!data?.length) return { error: NEEDS_DB_UPDATE, done: false };
+
+  revalidateMoney();
+  return { error: "", done: true };
+}
+
 export async function saveClientInvoice(_prevState: unknown, formData: FormData) {
   const { supabase, user } = await assertVendor();
 

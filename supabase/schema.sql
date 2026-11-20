@@ -116,7 +116,10 @@ security definer
 set search_path = public
 as $$
 begin
-  if new.status = 'approved' and (old.status is distinct from 'approved') then
+  -- A paid interview going back to approved (an undone payment) keeps its
+  -- original approval.
+  if new.status = 'approved' and old.status is distinct from 'approved'
+     and old.status is distinct from 'paid' then
     if new.rate_applied is null then
       select case when new.duration_minutes = 90 then rate_90 else rate_60 end
         into new.rate_applied
@@ -253,6 +256,104 @@ begin
 end;
 $$;
 
+-- Corrects a recorded payment's amount, date, mode, reference or notes. For an
+-- ordinary payment the difference from the worked-out amount is kept in
+-- adjustment_amount. A payment made in full before the deduction started sets
+-- what is recovered later, so it can't drop below what has been recovered.
+create or replace function update_payment(
+  p_payment_id uuid,
+  p_amount numeric,
+  p_paid_on date,
+  p_mode text,
+  p_reference text,
+  p_notes text
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_payment payments%rowtype;
+  v_gross numeric;
+  v_full numeric;
+  v_recovered numeric;
+begin
+  if not is_vendor() then
+    raise exception 'only the vendor can edit payments';
+  end if;
+  select * into v_payment from payments where id = p_payment_id for update;
+  if not found then
+    raise exception 'this payment no longer exists';
+  end if;
+  if p_amount is null or p_amount < 0 then
+    raise exception 'the payment amount can''t be negative';
+  end if;
+  if p_paid_on is null then
+    raise exception 'choose the date it was paid';
+  end if;
+
+  if v_payment.paid_in_full then
+    perform 1 from payments where panelist_id = v_payment.panelist_id for update;
+    select coalesce(sum(amount) filter (where paid_in_full and id <> p_payment_id), 0) + p_amount,
+           coalesce(sum(recovery_amount), 0)
+      into v_full, v_recovered
+    from payments
+    where panelist_id = v_payment.panelist_id;
+    if round(v_full * 0.10, 2) < v_recovered then
+      raise exception 'more than 10%% of this amount has already been recovered from later payouts';
+    end if;
+    update payments
+    set amount = p_amount, paid_on = p_paid_on, mode = p_mode, reference = p_reference, notes = p_notes
+    where id = p_payment_id;
+  else
+    select coalesce(sum(ie.amount), 0) into v_gross
+    from payment_entries pe
+    join interview_entries ie on ie.id = pe.entry_id
+    where pe.payment_id = p_payment_id;
+    update payments
+    set amount = p_amount, paid_on = p_paid_on, mode = p_mode, reference = p_reference, notes = p_notes,
+        adjustment_amount = v_gross - tds_amount - recovery_amount - p_amount
+    where id = p_payment_id;
+  end if;
+end;
+$$;
+
+-- Undoes an ordinary payment recorded by mistake: its interviews go back to
+-- approved and unpaid, and any September adjustment it took is owed again.
+-- Payments made in full before the deduction started can only be edited.
+create or replace function undo_payment(p_payment_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_payment payments%rowtype;
+begin
+  if not is_vendor() then
+    raise exception 'only the vendor can undo payments';
+  end if;
+  select * into v_payment from payments where id = p_payment_id for update;
+  if not found then
+    raise exception 'this payment no longer exists';
+  end if;
+  if v_payment.paid_in_full then
+    raise exception 'a payment made in full before the 10%% deduction can''t be undone, only edited';
+  end if;
+
+  update interview_entries
+  set status = 'approved'
+  where id in (select entry_id from payment_entries where payment_id = p_payment_id)
+    and status = 'paid';
+  delete from payments where id = p_payment_id;
+end;
+$$;
+
+revoke execute on function update_payment(uuid, numeric, date, text, text, text) from public, anon;
+grant execute on function update_payment(uuid, numeric, date, text, text, text) to authenticated;
+revoke execute on function undo_payment(uuid) from public, anon;
+grant execute on function undo_payment(uuid) to authenticated;
+
 -- Leaderboard: the only place a panelist can see other panelists, and it
 -- exposes just a name and a count (never amounts, emails or entry details).
 -- "Approved" includes paid entries, since those were approved first, but not
@@ -385,6 +486,12 @@ create policy "vendor reads payout batches" on payout_batches
 
 create policy "vendor manages payout batches" on payout_batches
   for insert with check (is_vendor());
+
+create policy "vendor updates payout batches" on payout_batches
+  for update using (is_vendor()) with check (is_vendor());
+
+create policy "vendor deletes payout batches" on payout_batches
+  for delete using (is_vendor());
 
 -- Auto-create a profiles row whenever a new panelist auth user is created
 -- via the admin API (see src/lib/supabase/admin.ts + the "add panelist" flow).
